@@ -7,7 +7,8 @@ from xdg import xdg_data_home
 from database import *
 from queue import Queue
 from common import *
-import time
+import time      
+from copy import deepcopy
 
 Incoming, BackBurner = Queue(), Queue()
 
@@ -76,23 +77,17 @@ class Login:
         with open(self.salt_path, 'rb') as f:
             salt = f.read()
             self.open_db(salt)
-"""
-        key_packet_to_myself = Asm.kex_packet(
-            PrivateKey.generate().public_key.encode(),
-            Asm.from_to(my_usr_pkt, Asm.user_packet(PrivateKey.generate().public_key.encode()))
-        )
-        Socket(self.sock).put(
-            key_packet_to_myself
-        )
-        
-        res = Socket(self.sock).get()
-        #if 
-        print(res)
-"""
 
 class DealWith:
     def __init__(self, obj):
         print("dealing with:", obj)
+
+class BackgroundGet:
+    def __init__(self, socket):
+        global db
+        while True:
+            print('Do')
+            Incoming.put(Socket(socket).get())
 
 class BackgroundRetry:
     def __init__(self, socket):
@@ -123,7 +118,8 @@ class Connection:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, int())
         self.sock.connect(CON)
         self.server_login(db['sk'])
-        threading.Thread(target=BackgroundRetry, args=(self.sock, )).start()
+        # threading.Thread(target=BackgroundRetry, args=(deepcopy(self.sock), )).start()
+        threading.Thread(target=BackgroundGet, args=(self.sock,)).start()
         my_usr_pkt = Asm.user_packet(db['pk'].encode())
         while True:
             obj = Incoming.get()
@@ -136,7 +132,7 @@ class Connection:
                     BackBurner.put(obj)
                 else:
                     Incoming.put(res)
-             
+     
         self.sock.close()
 
     # login the `key` on the server and prove that you're the owner of it.
@@ -150,6 +146,7 @@ class Connection:
         box = Box(key, server_exchange_key)
         msg = box.encrypt(public_key)
         Socket(self.sock).put(Asm.msg_packet(msg, dict()))
+
 class Client:
     def __init__(self, pw = 'XXX'):
         global db
