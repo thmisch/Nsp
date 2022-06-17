@@ -11,7 +11,7 @@ import time
 from copy import deepcopy
 
 Incoming, BackBurner = Queue(), Queue()
-
+kex_cache = list()
 # Convert nonces around, probably certificates will be used instead
 class Nonce:
     def get(obj):
@@ -77,75 +77,100 @@ class Login:
         with open(self.salt_path, 'rb') as f:
             salt = f.read()
             self.open_db(salt)
+class Msg:
+    def __init__(self):
+        pass
 
-class DealWith:
-    def __init__(self, obj):
-        print("dealing with:", obj)
+    def recipient(self, senders_kex):
+        self.exchange_key = PrivateKey.generate()
+        self.kex_packet = Asm.kex_packet(
+            self.exchange_key.public_key.encode(),
+            Asm.from_to(
+                senders_kex['To'], 
+                senders_kex['From']
+            )
+        )
+        self.box = Box(self.exchange_key, PublicKey(senders_kex['PubExKey']))
+        self.sent = False
 
-class BackgroundGet:
-    def __init__(self, socket):
-        global db
-        while True:
-            print('Do')
-            Incoming.put(Socket(socket).get())
-
-class BackgroundRetry:
-    def __init__(self, socket):
-        global db
-        self.to_do = list()
-        while True:
-            try:
-                obj = BackBurner.get(block=True if not self.to_do else False)
-                self.to_do.append(obj)
-            except:
-                obj = self.to_do[-1]
-            print('retrying', obj)
-            Socket(socket).put(obj)
-            print('getting')
-            res = Socket(socket).get()
-            print("fin_ getting")
-            if res == Err("offline"):
-                self.to_do.insert(0, self.to_do.pop())
-                time.sleep(2)
-            else:
-                self.to_do.remove(obj)
-                print('ay', res)
-                Incoming.put(res)
+    def sender(self, kex_packet, message):
+        self.exchange_key = PrivateKey.generate()
+        self.kex_packet = kex_packet
+        self.kex_packet['PubExKey'] = self.exchange_key.public_key.encode()
+        self.message = message
+        self.sent = True
 
 class Connection:
-    def __init__(self):
-        global db
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, int())
-        self.sock.connect(CON)
-        self.server_login(db['sk'])
-        # threading.Thread(target=BackgroundRetry, args=(deepcopy(self.sock), )).start()
-        threading.Thread(target=BackgroundGet, args=(self.sock,)).start()
-        my_usr_pkt = Asm.user_packet(db['pk'].encode())
+   def __init__(self):
+        # x = self.server_login(db['sk'])
+        threading.Thread(target=self.BgGet, args=(None,)).start()
+        threading.Thread(target=self.BgPut, args=(None,)).start()
+
+   def BgGet(self, non):
+        global db, kex_cache
+        sock = self.server_login(db['sk'])
+       
+        while True:
+            res = Socket(sock).get()
+            typ = type(res) == dict
+            sent = False
+            if typ and res.get('Type') == 'KEX':
+                for kex in kex_cache:
+                    r = next(iter(kex))
+                    m = kex[r]
+                    if r == res['From']['PubKey'] and m.sent:
+                        print('sender')
+                        box = Box(m.exchange_key, PublicKey(res['PubExKey']))
+                        msg = box.encrypt(m.message)
+                        kex_cache.remove(kex)
+                        Socket(sock).put(Asm.msg_packet(msg, Asm.from_to(res['To'], res['From'])))
+                        Socket(sock).get()
+                        print(kex_cache)
+                        sent = True
+                        break
+                if not sent:
+                    # reply with another kex
+                    m = Msg()
+                    m.recipient(res)
+                    kex_cache.append({res['From']['PubKey']: m})
+                    Socket(sock).put(m.kex_packet)
+                    Socket(sock).get()
+                    print('reciever reply with kex')
+            elif typ and res.get('Type') == 'MSG':
+                # asm db structures
+                for kex in kex_cache:
+                    m = kex.get(res['From']['PubKey'])   
+                    if m:
+                        msg = m.box.decrypt(res['Message'])
+                        print(msg)
+                        kex_cache.remove(kex)
+                        print(kex_cache)
+                        break
+
+   def BgPut(self, non):
+        global db, kex_cache
+        sock = self.server_login(db['sk'])
         while True:
             obj = Incoming.get()
-            if not obj['From'] == my_usr_pkt:
-                DealWith(obj)
-            elif not obj['From'] == obj['To']:
-                Socket(self.sock).put(obj)
-                res = Socket(self.sock).get()
-                if res == Err("offline"):
-                    BackBurner.put(obj)
-                else:
-                    Incoming.put(res)
-     
-        self.sock.close()
+            kex_cache.append({obj.kex_packet['To']['PubKey']: obj})
+            Socket(sock).put(obj.kex_packet)
+            Socket(sock).get()
 
     # login the `key` on the server and prove that you're the owner of it.
-    def server_login(self, key):
+   def server_login(self, key):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, int())
+        sock.connect(CON)
+        
         # do the key exchange
         public_key = key.public_key.encode()
-        Socket(self.sock).put(Asm.user_packet(public_key))
-        server_exchange_key = PublicKey(Socket(self.sock).get()['PubKey'])
+        Socket(sock).put(Asm.user_packet(public_key))
+        server_exchange_key = PublicKey(Socket(sock).get()['PubKey'])
         
         # encrypt and send the the public key to the server
         box = Box(key, server_exchange_key)
         msg = box.encrypt(public_key)
-        Socket(self.sock).put(Asm.msg_packet(msg, dict()))
+        Socket(sock).put(Asm.msg_packet(msg, dict()))
+        return sock
 
 class Client:
     def __init__(self, pw = 'XXX'):
@@ -155,13 +180,21 @@ class Client:
         print(db['pk'].encode(B64Encoder))
 
         my_usr_pkt = Asm.user_packet(db['pk'].encode())
+        m = Msg()
         if len(argv) > 2:
-            kex_packet_to_myself = Asm.kex_packet(
-                PrivateKey.generate().public_key.encode(),
-                Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode()))
+            #kex_packet_to_myself = Asm.kex_packet(
+            #    PrivateKey.generate().public_key.encode(),
+                m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode()))), b'AYY')
+                Incoming.put(m)
+                m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode()))), b'AYY')
+                Incoming.put(m)
                 #Asm.from_to(my_usr_pkt, my_usr_pkt)
 
-            )
-            Incoming.put(kex_packet_to_myself)
+            #)
+            #Incoming.put(kex_packet_to_myself)
+        #else:
+        #    m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, my_usr_pkt)), b'Ay')
+
+
 
 Client()

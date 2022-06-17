@@ -52,13 +52,13 @@ class Scp:
             for user in cache:
                 recipient = next(iter(user))
                 if res['To']['PubKey'] == recipient:
-                    #Socket(self.peer).put(Ok("sent"))
                     Socket(user[recipient]).put(res)
                     sent = True
-                    break
             # notify the peer if the message couldn't be sent to `To`
             if not sent:
                 Socket(self.peer).put(Err("offline"))
+            else:
+                Socket(self.peer).put(Ok("sent"))
 
         elif res.get('Type') == 'USR':
             self.verify_name(res)
@@ -88,7 +88,11 @@ class TLSRequestHandler(socketserver.BaseRequestHandler):
         proto = Scp(self.request)
         while proto.conn:
             #TODO: use try to catch errors later
-            proto.handle()
+            try:
+                proto.handle()
+            except Exception as e:
+                proto.end()
+                print('unhandled err:\n\n', e)
 
 def main():
     server = ThreadingTLServer(CON, TLSRequestHandler)
