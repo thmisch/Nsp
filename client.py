@@ -9,9 +9,13 @@ from queue import Queue
 from common import *
 import time      
 from copy import deepcopy
+from collections import deque
 
 Incoming, BackBurner = Queue(), Queue()
+
 kex_cache = list()
+kex_lock = threading.Lock()
+
 # Convert nonces around, probably certificates will be used instead
 class Nonce:
     def get(obj):
@@ -97,17 +101,17 @@ class Msg:
             self.exchange_key.public_key.encode(),
             from_to
         )
+        self.kex_packet['init'] = True
         self.message = message
         self.sent = True
 
 class Connection:
    def __init__(self):
-        # x = self.server_login(db['sk'])
         threading.Thread(target=self.BgGet, args=(None,)).start()
         threading.Thread(target=self.BgPut, args=(None,)).start()
 
    def BgGet(self, non):
-        global db, kex_cache
+        global db, kex_cache, kex_lock
         sock = self.server_login(db['sk'])
        
         while True:
@@ -115,17 +119,17 @@ class Connection:
             typ = type(res) == dict
             sent = False
             if typ and res.get('Type') == 'KEX':
-                for kex in kex_cache:
+                #kex_lock.acquire()
+                for i, kex in enumerate(kex_cache):
                     r = next(iter(kex))
                     m = kex[r]
                     if r == res['From']['PubKey'] and m.sent:
+                        del kex_cache[i]
+                        #kex_lock.release()
                         print('sender')
                         box = Box(m.exchange_key, PublicKey(res['PubExKey']))
                         msg = box.encrypt(m.message)
-                        kex_cache.remove(kex)
                         Socket(sock).put(Asm.msg_packet(msg, Asm.from_to(res['To'], res['From'])))
-                        x = Socket(sock).get()
-                        print('sender status', x)
                         print(kex_cache)
                         sent = True
                         break
@@ -133,30 +137,46 @@ class Connection:
                     # reply with another kex
                     m = Msg()
                     m.recipient(res)
+                    #kex_lock.acquire()
                     kex_cache.append({res['From']['PubKey']: m})
                     Socket(sock).put(m.kex_packet)
-                    x = Socket(sock).get()
-                    print('reciever reply with kex', x)
+                    #kex_lock.release()
             elif typ and res.get('Type') == 'MSG':
                 # asm db structures
-                for kex in kex_cache:
+                #kex_lock.acquire()
+                for i, kex in enumerate(kex_cache):
                     m = kex.get(res['From']['PubKey'])   
                     if m:
+                        del kex_cache[i]
+                        #kex_lock.release()
+                        #kex_ev
                         msg = m.box.decrypt(res['Message'])
                         print(msg)
-                        kex_cache.remove(kex)
                         print(kex_cache)
                         break
 
    def BgPut(self, non):
-        global db, kex_cache
+        global db, kex_cache, kex_lock
         sock = self.server_login(db['sk'])
+        buffer = list()
         while True:
             obj = Incoming.get()
+            #for kex in kex_cache:
+            #    o = next(iter(kex))
+            #    if o == obj.kex_packet['To']['PubKey']:
+            #        buffer.append(obj)
+            #        break
+            
+            #kex_lock.acquire()
             kex_cache.append({obj.kex_packet['To']['PubKey']: obj})
             Socket(sock).put(obj.kex_packet)
+            #kex_lock.release()
+
             x = Socket(sock).get()
             print("send status", x)
+            if x == Err("offline"):
+                kex_cache = list()
+            #time.sleep(1e-06)
 
     # login the `key` on the server and prove that you're the owner of it.
    def server_login(self, key):
@@ -182,9 +202,18 @@ class Client:
         print(db['pk'].encode(B64Encoder))
 
         my_usr_pkt = Asm.user_packet(db['pk'].encode())
-        m = Msg()
 
         if len(argv) > 2:
-            m.sender(Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode())), b'AYY')
-            Incoming.put(m)
+            i = 0
+            while True:
+                if not kex_cache:
+                    m = Msg()
+                    m.sender(Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode())), b'Ay'+ str(i).encode())
+                    Incoming.put(m)
+                    i += 1
+                    #time.sleep(0.0001)
+                    #m = Msg()
+                    #m.sender(Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[3].encode(), encoder=B64Encoder).encode())), b'Bey')
+                    #Incoming.put(m)
+                    #time.sleep(0.0001)
 Client()

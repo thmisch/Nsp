@@ -22,8 +22,8 @@ class Scp:
         # a key exchange is possible. If not then we know the peer is trying to
         # get unwanted access to another peers data. 
         res = Socket(self.peer).get()
-        typ = res.get('Type') if res else None
-        if typ and typ == 'MSG' and res.get('Message'):
+        typ = res.get('Type') if type(res) == dict else None
+        if typ == 'MSG' and res.get('Message'):
             msg = box.decrypt(res.get('Message'))
             if msg == peer_name:
                 cache.append(
@@ -52,13 +52,16 @@ class Scp:
             for user in cache:
                 recipient = next(iter(user))
                 if res['To']['PubKey'] == recipient:
+                    if res.get('init'):
+                        Socket(self.peer).put(Ok("sent"))
                     Socket(user[recipient]).put(res)
                     sent = True
+
+            print(res)
             # notify the peer if the message couldn't be sent to `To`
-            if not sent:
-                Socket(self.peer).put(Err("offline"))
-            else:
-                Socket(self.peer).put(Ok("sent"))
+            if res.get('init'):
+                if not sent:
+                    Socket(self.peer).put(Err("offline"))
 
         elif res.get('Type') == 'USR':
             self.verify_name(res)
