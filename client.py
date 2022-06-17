@@ -79,10 +79,9 @@ class Login:
             self.open_db(salt)
 class Msg:
     def __init__(self):
-        pass
+        self.exchange_key = PrivateKey.generate()
 
     def recipient(self, senders_kex):
-        self.exchange_key = PrivateKey.generate()
         self.kex_packet = Asm.kex_packet(
             self.exchange_key.public_key.encode(),
             Asm.from_to(
@@ -93,10 +92,11 @@ class Msg:
         self.box = Box(self.exchange_key, PublicKey(senders_kex['PubExKey']))
         self.sent = False
 
-    def sender(self, kex_packet, message):
-        self.exchange_key = PrivateKey.generate()
-        self.kex_packet = kex_packet
-        self.kex_packet['PubExKey'] = self.exchange_key.public_key.encode()
+    def sender(self, from_to, message):
+        self.kex_packet = Asm.kex_packet(
+            self.exchange_key.public_key.encode(),
+            from_to
+        )
         self.message = message
         self.sent = True
 
@@ -124,7 +124,8 @@ class Connection:
                         msg = box.encrypt(m.message)
                         kex_cache.remove(kex)
                         Socket(sock).put(Asm.msg_packet(msg, Asm.from_to(res['To'], res['From'])))
-                        Socket(sock).get()
+                        x = Socket(sock).get()
+                        print('sender status', x)
                         print(kex_cache)
                         sent = True
                         break
@@ -134,8 +135,8 @@ class Connection:
                     m.recipient(res)
                     kex_cache.append({res['From']['PubKey']: m})
                     Socket(sock).put(m.kex_packet)
-                    Socket(sock).get()
-                    print('reciever reply with kex')
+                    x = Socket(sock).get()
+                    print('reciever reply with kex', x)
             elif typ and res.get('Type') == 'MSG':
                 # asm db structures
                 for kex in kex_cache:
@@ -154,7 +155,8 @@ class Connection:
             obj = Incoming.get()
             kex_cache.append({obj.kex_packet['To']['PubKey']: obj})
             Socket(sock).put(obj.kex_packet)
-            Socket(sock).get()
+            x = Socket(sock).get()
+            print("send status", x)
 
     # login the `key` on the server and prove that you're the owner of it.
    def server_login(self, key):
@@ -181,20 +183,8 @@ class Client:
 
         my_usr_pkt = Asm.user_packet(db['pk'].encode())
         m = Msg()
+
         if len(argv) > 2:
-            #kex_packet_to_myself = Asm.kex_packet(
-            #    PrivateKey.generate().public_key.encode(),
-                m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode()))), b'AYY')
-                Incoming.put(m)
-                m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode()))), b'AYY')
-                Incoming.put(m)
-                #Asm.from_to(my_usr_pkt, my_usr_pkt)
-
-            #)
-            #Incoming.put(kex_packet_to_myself)
-        #else:
-        #    m.sender(Asm.kex_packet(None, Asm.from_to(my_usr_pkt, my_usr_pkt)), b'Ay')
-
-
-
+            m.sender(Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[2].encode(), encoder=B64Encoder).encode())), b'AYY')
+            Incoming.put(m)
 Client()
