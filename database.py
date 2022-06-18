@@ -1,8 +1,9 @@
 import pickle, os, shutil
 from nacl.secret import SecretBox
 
+
 class PersistentDict(dict):
-    """ Persistent dictionary with an API compatible with shelve and anydbm.
+    """Persistent dictionary with an API compatible with shelve and anydbm.
 
     The dict is kept in memory, so the dictionary operations run as fast as
     a regular dictionary.
@@ -10,24 +11,24 @@ class PersistentDict(dict):
     Write to disk is delayed until close or sync (similar to gdbm's fast mode).
     """
 
-    def __init__(self, filename, key, flag='c', mode=None, *args, **kwds):
-        self.flag = flag                    # r=readonly, c=create, or n=new
-        self.mode = mode                    # None or an octal triple like 0644
+    def __init__(self, filename, key, flag="c", mode=None, *args, **kwds):
+        self.flag = flag  # r=readonly, c=create, or n=new
+        self.mode = mode  # None or an octal triple like 0644
         self.box = SecretBox(key)
         self.filename = filename
-        if flag != 'n' and os.access(filename, os.R_OK):
-            fileobj = open(filename, 'rb')
+        if flag != "n" and os.access(filename, os.R_OK):
+            fileobj = open(filename, "rb")
             with fileobj:
                 self.load(fileobj)
         dict.__init__(self, *args, **kwds)
 
     def sync(self):
-        'Write dict to disk'
-        if self.flag == 'r':
+        "Write dict to disk"
+        if self.flag == "r":
             return
         filename = self.filename
-        tempname = filename + '.tmp'
-        fileobj = open(tempname, 'wb')
+        tempname = filename + ".tmp"
+        fileobj = open(tempname, "wb")
         try:
             self.dump(fileobj)
         except Exception:
@@ -35,7 +36,7 @@ class PersistentDict(dict):
             raise
         finally:
             fileobj.close()
-        shutil.move(tempname, self.filename)    # atomic commit
+        shutil.move(tempname, self.filename)  # atomic commit
         if self.mode is not None:
             os.chmod(self.filename, self.mode)
 
