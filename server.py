@@ -3,7 +3,6 @@ import socketserver
 
 cache = list()
 
-
 class Scp:
     def __init__(self, peer):
         self.peer = peer

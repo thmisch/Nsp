@@ -14,6 +14,7 @@ from collections import deque
 Incoming, BackBurner = Queue(), Queue()
 
 kex_cache = list()
+offline_kexs = list()
 kex_lock = threading.Lock()
 
 # Convert nonces around, probably certificates will be used instead
@@ -106,16 +107,18 @@ class Msg:
 
 class Connection:
     def __init__(self):
-        threading.Thread(target=self.BgGet, args=(None,)).start()
-        threading.Thread(target=self.BgPut, args=(None,)).start()
+        threading.Thread(target=self.BgGet).start()
+        threading.Thread(target=self.BgPut).start()
 
-    def BgGet(self, non):
+    def BgGet(self):
         global db, kex_cache, kex_lock
         sock = self.server_login(db["sk"])
 
         while True:
             res = Socket(sock).get()
             typ = type(res) == dict
+            #print('TYPE',typ)
+            #print('RES', res)
             sent = False
             if typ and res.get("Type") == "KEX":
                 print('got kex')
@@ -163,48 +166,84 @@ class Connection:
                             print('cleaned up kex cache')
                         break
             print(kex_cache)
-    """
-    def find_remove(self, what):
-        global kex_cache
-        indx = list()
 
-        kex_lock.acquire()
-        for k in kex_cache:
-            if k == what:
-                indx.append(kex_cache.index(k))
-        for y, i in enumerate(indx):
-            del kex_cache[i-y]
-        kex_lock.release()
-
-    def remove_all_but_last(self, what):
-        global kex_cache
-        for k in kex_cache[:-1]:
-            key = next(iter(k))
-            if key == what:
-                pass
-            pass
-    """
-    def BgPut(self, non):
-        global db, kex_cache, kex_lock
-        sock = self.server_login(db["sk"])
-        buffer = list()
-        while True:
-            obj = Incoming.get()
+    # send and relay messages in a optimized way.
+    def BgPut(self):
+        def get_entry_from(obj):
             k = obj.kex_packet["To"]["PubKey"]
-            if k in buffer:
-                continue
             entry = {k: obj}
-            
+            return k, entry
+
+        # return the first offline message thats intended to be sent to `name`
+        def get_another_offline(name):
+            global offline_kexs
+            for m in offline_kexs:
+                if name == m.kex_packet["To"]["PubKey"]:
+                    return m
+
+        # try to send a KEX packet to the peer 
+        def try_obj(obj, sock, value = False):
+            global offline_kexs, kex_cache
+            k, entry = get_entry_from(obj)
+
             kex_cache.append(entry)
             Socket(sock).put(obj.kex_packet)
             
             x = Socket(sock).get()
             if x == Err("offline"):
-                print('CULN')
                 kex_cache.remove(entry)
-                buffer.append(k)
+                if not obj in offline_kexs:
+                    offline_kexs.append(obj)
             else:
-                print("wrongfully recvd", x)
+                if obj in offline_kexs:
+                    offline_kexs.remove(obj)
+                    another = get_another_offline(k)
+                    if another:
+                        try_obj(another, sock)
+
+        # only return the first message for each offline peer
+        # this is done to retain the order there were in.
+        def group_kexes():
+            global offline_kexs
+            l = list()
+
+            for m in offline_kexs:
+                l.append(m.kex_packet["To"]["PubKey"])
+            l = set(l)
+            res = list()
+            for why in l:
+                for m in offline_kexs:
+                    if why == m.kex_packet["To"]["PubKey"]:
+                        res.append(m)
+                        break
+            return res
+
+        global db, offline_kexs
+        sock = self.server_login(db["sk"])
+        what = False
+        while True:
+            if what == False:
+                try:
+                    obj = Incoming.get(block=False)
+                except Exception as e:
+                    what = True
+            if what == True:
+                if not offline_kexs:
+                    obj = Incoming.get()
+                    what = False
+
+            if what == True:
+                for m in group_kexes():
+                    try_obj(m, sock, value = True)
+                    time.sleep(0.1)
+            else:
+                k, entry = get_entry_from(obj)
+                if get_another_offline(k):
+                    offline_kexs.append(obj)
+                else:
+                    try_obj(obj, sock)
+
+            what = not what
 
     # login the `key` on the server and prove that you're the owner of it.
     def server_login(self, key):
@@ -234,7 +273,7 @@ class Client:
 
         if len(argv) > 2:
             i = 0
-            for x in range(5000):
+            for x in range(100):
             #while True:
                 #if 1 < 2:
                 #if not kex_cache:
@@ -251,11 +290,6 @@ class Client:
                     print('on msg', i)
                     Incoming.put(m)
                     i += 1
-                    # time.sleep(0.01)
-                    # m = Msg()
-                    # m.sender(Asm.from_to(my_usr_pkt, Asm.user_packet(PublicKey(argv[3].encode(), encoder=B64Encoder).encode())), b'Bey')
-                    # Incoming.put(m)
-                    # time.sleep(0.001)
             print('done')
 
 
