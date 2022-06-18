@@ -2,7 +2,6 @@ from database import *
 from common import *
 from queue import Queue
 import time
-import curses, curses.textpad
 
 # exchange data between threads
 Incoming = Queue()
@@ -261,73 +260,8 @@ class Connection:
         Socket(sock).put(Asm.msg_packet(msg, dict()))
         return sock
 
-class WinShare:
-    def __init__(self):
-        pass
-win_share = WinShare()
-
-class ContactsWindow:
-    def __init__(self):
-        self.selected = int()
-        pass
-    
-    def header(self):
-        pass
-    def subheading(self):
-        pass
-
-    # find all contact entrys
-    def create_contact_list(self):
-        self.contacts = list()
-        for contact in db.keys():
-            if type(contact) == bytes:
-                self.contacts.append(contact)
-
-    def action(self, key):
-        self.create_contact_list()
-        self.key = key
-        if len(self.contacts):
-            if key in (curses.KEY_DOWN,):
-                self.selected += 1 
-            elif key in (curses.KEY_UP,):
-                self.selected -= 1
-            self.selected %= len(self.contacts)
-
-    def render(self):
-        s = "Your Contacts"
-        self.curses.addstr(1,1, s.center(self.x+1))
-
-        for i, contact in enumerate(self.contacts):
-            name = B64Encoder().encode(contact).decode()
-            vname = db[contact]['viewable_name']
-            if vname:
-                name = vname
-            self.curses.addstr(2+i, 1, name)
-            self.curses.move(self.selected+2+i, 1)
-
-class ChatsWindow:
-    def __init__(self):
-        pass
-    def action(self, key):
-        self.key = key
-        pass
-    def render(self):
-        self.curses.addstr(1,0,  ' ')
-        # self.curses.move(1,1)
-        self.curses.addstr('' if not type(self.key) == str else self.key)
-        pass
-
-class TextEditWindow:
-    def __init__(self):
-        pass
-    def action(self, key):
-        pass
-    def render(self):
-        self.curses.move(1,1)
-        pass
-
 class Client:
-    def __init__(self, pw="XXX"):
+    def __init__(self):
         global db
         db = Login(pw).db
         threading.Thread(target=Connection).start()
@@ -341,64 +275,6 @@ class Client:
             )
         Incoming.put(m)
         db.sync()
-        curses.wrapper(self.main)
-
-    def create_windows(self, update = False):
-        self.y, self.x = self.scr.getmaxyx()
-        raw_wins = [
-            curses.newwin(self.y, int(.33 * self.x), 0, 0),
-            curses.newwin(int(.77 * self.y), int(.67 * self.x), 0, int(.33 * self.x)),
-            curses.newwin(int(.23 * self.y) + 1, int(.67 * self.x), int(.77 * self.y), int(.33 * self.x))
-        ]
-        for w in raw_wins:
-            w.keypad(True)
-        if not update:
-            self.windows = [
-                ContactsWindow(),
-                ChatsWindow(),
-                TextEditWindow()
-            ]
-        for win, curs in zip(self.windows, raw_wins):
-            win.curses = curs
-
-    def main(self, scr):
-        self.scr = scr
-        
-        self.cur_contact = None
-        self.text_buffer = dict()
-        self.cur_win = int()
-
-        self.create_windows()
-        self.render()
-
-        self.run = True
-        while self.run:
-            self.loop()
-
-    def render(self, k = None):
-        # render all windows, but the current window at last
-        for w in ( self.windows[:self.cur_win]
-            + self.windows[self.cur_win+1:]
-            + [self.windows[self.cur_win]]
-            ):
-            w.y, w.x = w.curses.getmaxyx()
-            w.curses.erase()
-            w.action(k)
-            w.render()
-            w.curses.border()
-            w.curses.refresh()
-
-    def loop(self):
-        k = self.windows[self.cur_win].curses.get_wch()
-
-        if k == curses.KEY_RESIZE:
-            self.create_windows(update=True)
-        elif k == '\t':
-            self.cur_win += 1
-            self.cur_win %= len(self.windows)
-        elif k == 'Q':
-            exit()
-        self.render(k)
 
 if __name__ == "__main__":
     Client()
