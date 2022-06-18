@@ -1,13 +1,20 @@
-import msgpack
+# common code for the server and client
 import socket
 import threading
 import bson
+import toml
+
+from pathlib import Path
+from os.path import exists
+from os import remove, makedirs
+from xdg import xdg_data_home
 
 from nacl.encoding import URLSafeBase64Encoder as B64Encoder
 from nacl.public import PrivateKey, Box, PublicKey
 import nacl.pwhash
 import nacl.utils
 
+import argparse
 bson.patch_socket()
 
 # simplify sending and recieving of messages
@@ -22,7 +29,7 @@ class Socket:
         return self.peer.recvobj()
 
 
-# assemble all the packet structures for the protocol
+# build the protocol packets
 class Asm:
     def user_packet(pubkey):
         return {
@@ -39,13 +46,11 @@ class Asm:
     def msg_packet(message, from_to):
         return {"Type": "MSG", "Message": message, **from_to}
 
-
 def Err(what):
     return {"err": what}
-
 
 def Ok(what):
     return {"ok": what}
 
-
+# TODO: don't hardcode this
 CON = ("localhost", 32462)

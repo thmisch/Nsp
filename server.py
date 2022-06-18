@@ -26,8 +26,11 @@ class Scp:
         if typ == "MSG" and res.get("Message"):
             msg = box.decrypt(res.get("Message"))
             if msg == peer_name:
-                cache.append({peer_name: self.peer})
                 self.verified_names.append(peer_name)
+                cache.append({peer_name: self.peer})
+                return
+        self.end()
+
 
     def handle(self):
         sent = False
@@ -53,14 +56,13 @@ class Scp:
                     Socket(user[recipient]).put(res)
                     sent = True
 
-            print(res)
             # notify the peer if the message couldn't be sent to `To`
             if not sent:
                 Socket(self.peer).put(Err("offline"))
 
         elif res.get("Type") == "USR":
             self.verify_name(res)
-
+        print(res)
     def end(self):
         self.conn = False
         print("DISCONNECTed:", self.peer)
