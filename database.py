@@ -1,7 +1,6 @@
 import pickle, os, shutil
 from nacl.secret import SecretBox
 
-
 class PersistentDict(dict):
     """Persistent dictionary with an API compatible with shelve and anydbm.
 

@@ -13,8 +13,8 @@ from nacl.encoding import URLSafeBase64Encoder as B64Encoder
 from nacl.public import PrivateKey, Box, PublicKey
 import nacl.pwhash
 import nacl.utils
-
-import argparse
+import pickle
+from argparse import ArgumentParser
 bson.patch_socket()
 
 # simplify sending and recieving of messages
@@ -27,7 +27,6 @@ class Socket:
 
     def get(self):
         return self.peer.recvobj()
-
 
 # build the protocol packets
 class Asm:
@@ -52,5 +51,16 @@ def Err(what):
 def Ok(what):
     return {"ok": what}
 
+class UIMessages:
+    welcome = """
+    Welcome to Nsc, the new simple chat.
+    To start chatting, please enter your (new) password.
+    """
+    pass_prompt = "Password: "
+
 # TODO: don't hardcode this
-CON = ("localhost", 32462)
+CON = ("localhost", 32471)
+
+COMMON_PATH = Path(xdg_data_home(), "nsc")
+def backend_socket_path(extra):
+    return str(Path(COMMON_PATH, 'backend' + extra)).encode()

@@ -31,7 +31,15 @@ class Scp:
                 return
         self.end()
 
-
+    # try to find potentially bad packets, which could crash the reciepients
+    # client.
+    def check_packet(self, packet):
+        typ = packet["Type"]
+        if typ == "KEX":
+            # if a bad key was provided, this will crash the current server
+            # thread, disconnecting the attacker.
+            PublicKey(packet.get("PubExKey"))
+            
     def handle(self):
         sent = False
         res = Socket(self.peer).get()
@@ -44,8 +52,8 @@ class Scp:
 
         if res.get("Type") in ("KEX", "MSG"):
             # Only verified names are allowed send messages
-            if not res["From"]["PubKey"] in self.verified_names:
-                print("unverified_peer")
+            if (not res["From"]["PubKey"] in self.verified_names) or self.check_packet(res):
+                print("unverified_peer or bad packet")
                 self.end()
                 return
             # start from the back of the cache, to allow newer connections
@@ -63,6 +71,7 @@ class Scp:
         elif res.get("Type") == "USR":
             self.verify_name(res)
         print(res)
+
     def end(self):
         self.conn = False
         print("DISCONNECTed:", self.peer)
@@ -71,7 +80,6 @@ class Scp:
             if e in cache:
                 cache.remove(e)
                 print("peer removed from cache")
-
 
 class TLServer(socketserver.TCPServer):
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
@@ -82,7 +90,6 @@ class TLServer(socketserver.TCPServer):
         # self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         # self.context.load_cert_chain('keys/cert.pem', 'keys/key.pem')
         # self.socket = self.context.wrap_socket(self.socket, server_side=True)
-
 
 class ThreadingTLServer(socketserver.ThreadingMixIn, TLServer):
     pass
@@ -99,13 +106,11 @@ class TLSRequestHandler(socketserver.BaseRequestHandler):
                 proto.end()
                 print("unhandled err:\n\n", e)
 
-
 def main():
     server = ThreadingTLServer(CON, TLSRequestHandler)
     ip, port = server.server_address
     print("Serving on: {}:{}".format(ip, port))
     server.serve_forever()
-
 
 if __name__ == "__main__":
     main()
