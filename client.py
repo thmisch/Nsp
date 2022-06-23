@@ -369,6 +369,7 @@ class Client:
         pw = 'XYZ'
 
         self.db = Database(pw).db
+        self.db.sync()
         self.backend_box = SecretBox(self.db['bs'])
         self.backend_in = Queue()
         self.mup = self.db["my_usr_pkt"]
