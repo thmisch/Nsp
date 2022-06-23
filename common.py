@@ -1,4 +1,4 @@
-# common code for the server and client
+# common code shared with the server and client
 import socket
 import threading
 import bson

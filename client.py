@@ -111,6 +111,7 @@ class BackendUnixSend(socketserver.StreamRequestHandler):
                 print("sent data back to peer")
                 sock.put(self.data)
             except Exception as e:
+                BackendOut.put(self.rdata)
                 print("error at UnixSend:", e)
                 ErrorEvent.set()
                 break
@@ -140,7 +141,7 @@ class Backend:
         self.threads = list()
         for s, w in zip(servers, ['P', 'L']):
             self.threads.append(
-                threading.Thread(target=self.server, args=(s, w), daemon=True)
+                threading.Thread(target=self.server, args=(s, w)) #daemon=True)
             )
         for t in self.threads:
             t.start()
@@ -221,7 +222,7 @@ class Backend:
 
                         print("sending message")
                         box = Box(m.exchange_key, PublicKey(res["PubExKey"]))
-                        msg = box.encrypt(m.message)
+                        msg = box.encrypt(bson.dumps(m.message))
                         Socket(sock).put(
                             Asm.msg_packet(msg, Asm.from_to(res["To"], res["From"]))
                         )
@@ -245,7 +246,7 @@ class Backend:
                     if m:
                         del self.kex_cache[i]
                         try:
-                            msg = m.box.decrypt(res["Message"])
+                            msg = bson.loads(m.box.decrypt(res["Message"]))
                             print('got msg', msg)
 
                             frm = res["From"]["PubKey"]
@@ -354,6 +355,11 @@ class MsgType:
     def get(self):
         return next(iter(self.msg))
 
+class Contact:
+    def __init__(self, name=None):
+        self.addrs = [name]
+        self.names = [B64Encoder.encode(addr) if addr else None for addr in self.addrs]
+
 class Client:
     def __init__(self):
         signal(SIGINT, self.exit_handler)
@@ -389,6 +395,7 @@ class Client:
             start_threads()
 
             self.run = True
+            self.contact = Contact()
             while self.run:
                 self.loop()
 
@@ -401,31 +408,68 @@ class Client:
                 remove(p)
         exit()
 
+    # return the time difference in string form
+    def t_diff(self, ct):
+        def asm(val, name):
+            mult = False if round(val) == 1 else True
+            if not mult:
+                name = name[:-1]
+            return f"{val} {name} ago."
+
+        diff = int(time.time()) - int(ct)
+        if diff < 60:
+            return asm(diff, 'seconds')
+        elif diff < 3600:
+            return asm(round(diff/60), 'minutes')
+        elif diff >= 3600 and diff < 3600*24:
+            return asm(round(diff/3600), 'hours')
+        elif diff >= 3600*24:
+            return asm(round(diff/(3600*24)), 'days')
+
+    def displ_msg(self, msg, alias):
+        who = B64Encoder.encode(msg['who']) if not alias else alias
+        time = self.t_diff(msg['time'])
+        #print(msg)
+        m = msg['msg'].get('utf-8')
+
+        print(f"\n{time} by {who}:\n{m}\n")
+
     def shell(self):
         pass
 
     def loop(self):
-        inp = input()
+        inp = input(str(self.contact.names) + '> ')
         if not inp:
             return
-        
-        m = Msg().sender(
-            Asm.from_to(
-            self.mup,
-            self.mup
-            ),
-            MsgType(inp).set("utf-8")
-            )
-        self.backend_in.put(m)
+        if len(inp) > 2 and inp[:2] == 'cd':
+            self.contact = Contact(B64Encoder.decode(inp[3:]))
+        elif len(inp) == 2 and inp == '..':
+            self.contact = Contact()
+        elif len(inp) == 4 and inp == 'info':
+            print(B64Encoder.encode(self.mup['PubKey']))
+        else:
+            for addr in self.contact.names:
+                if addr:
+                    m = Msg().sender(
+                        Asm.from_to(
+                        self.mup,
+                        self.mup
+                        ),
+                        MsgType(inp).set("utf-8")
+                        )
+                    self.backend_in.put(m)
 
     def listen_backend(self, s):
         while True:
             res = s.get()
             if not res:
-                print("err happend at listen_backend")
+                print("err happened at listen_backend")
                 break
             res = pickle.loads(self.backend_box.decrypt(res['None']))
-            print('got from backend: ', res)
+            # TODO: save the contact entry
+            #self.db[res]
+            #print('got from backend: ', dis)
+            print(self.displ_msg(res[next(iter(res))]['chat'][-1], None))
 
     def put_backend(self, s):
         while True:
@@ -442,6 +486,6 @@ class Client:
             except:
                 print("trying to re-connect. ")
                 time.sleep(0.1)
-        
+
 if __name__ == "__main__":
     Client()
