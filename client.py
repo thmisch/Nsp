@@ -453,7 +453,7 @@ class Client:
                     m = Msg().sender(
                         Asm.from_to(
                         self.mup,
-                        self.addr
+                        addr
                         ),
                         MsgType(inp).set("utf-8")
                         )
