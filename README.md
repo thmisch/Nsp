@@ -9,7 +9,8 @@ A Linux or unix-like operating system is required. If you have access to such,
 run install.py as root to install the Nsc client and server on your system.
 
 ```
-sudo ./install.py
+pip install bson xdg pynacl toml
+# TODO: sudo ./install.py
 ```
 
 ## Features:
