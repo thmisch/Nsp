@@ -448,12 +448,13 @@ class Client:
         elif len(inp) == 4 and inp == 'info':
             print(B64Encoder.encode(self.mup['PubKey']))
         else:
-            for addr in self.contact.names:
+            for addr in self.contact.addrs:
                 if addr:
+                    print("ADDR", addr)
                     m = Msg().sender(
                         Asm.from_to(
                         self.mup,
-                        addr
+                        Asm.user_packet(addr)
                         ),
                         MsgType(inp).set("utf-8")
                         )
