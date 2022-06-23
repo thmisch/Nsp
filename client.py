@@ -5,7 +5,7 @@ from queue import Queue
 import time
 import socketserver
 from signal import signal, SIGINT
-
+import readline
 BackendIn = Queue()
 BackendOut = Queue()
 ErrorEvent = threading.Event()
@@ -392,6 +392,7 @@ class Client:
         else:
             if not paths:
                 be_thread.start()
+            time.sleep(1)
             start_threads()
 
             self.run = True
@@ -432,7 +433,7 @@ class Client:
         #print(msg)
         m = msg['msg'].get('utf-8')
 
-        print(f"\n{time} by {who}:\n{m}\n")
+        print(f"\n----\n{time} by {who}:\n{m}\n----\n")
 
     def shell(self):
         pass
