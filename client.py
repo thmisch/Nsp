@@ -314,35 +314,31 @@ class Backend:
 
         sock = self.server_login()
 
-        # what serves as a switch, to allow for offline kexs to be sent out
-        # half of the time
-        what = False
+        offline = False
         while True:
-            if what == False:
+            if not offline:
                 try:
-                    obj = BackendIn.get(block=False)
+                    obj = BackendIn.get(timeout=5)
                     print("got obj to work on")
+                    # this ensures the correct order in which messages are being sent out.
+                    # see the recursive part of try_obj()
+                    #
+                    # this way also saves half-1 of the requests made compared to 
+                    # when using try_obj directly.
+                    k, entry = get_entry_from(obj)
+                    if get_another_offline(k):
+                        self.db['offline_kexs'].append(obj)
+                    else:
+                        try_obj(obj, sock)
                 except Exception as e:
-                    what = True
-            if what == True:
-                if not self.db['offline_kexs']:
-                    print("got obj to work on")
-                    obj = BackendIn.get()
-                    what = False
-            if what == True:
+                    pass
+            else:
                 for m in group_kexes():
                     try_obj(m, sock)
-                    # be nice to the central processing unit
+                    # a small delay to keep the kex_cache clean :D
                     time.sleep(.1)
-            else:
-                k, entry = get_entry_from(obj)
-                if get_another_offline(k):
-                    self.db['offline_kexs'].append(obj)
-                else:
-                    try_obj(obj, sock)
 
-            # only try to re-send messages to offline peers half of the time
-            what = not what
+            offline = not offline
 
 # set or get the type of a message to send
 class MsgType:
