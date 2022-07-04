@@ -221,8 +221,9 @@ class Backend:
                         del self.kex_cache[i]
 
                         print("sending message")
-                        box = Box(m.exchange_key, PublicKey(res["PubExKey"]))
-                        msg = box.encrypt(bson.dumps(m.message))
+                        box0 = Box(self.db["sk"], PublicKey(res["From"]["PubKey"]))
+                        box1 = Box(m.exchange_key, PublicKey(res["PubExKey"]))
+                        msg = box1.encrypt(box0.encrypt(bson.dumps(m.message)))
                         Socket(sock).put(
                             Asm.msg_packet(msg, Asm.from_to(res["To"], res["From"]))
                         )
@@ -246,7 +247,8 @@ class Backend:
                     if m:
                         del self.kex_cache[i]
                         try:
-                            msg = bson.loads(m.box.decrypt(res["Message"]))
+                            box0 = Box(self.db["sk"], PublicKey(res["From"]["PubKey"]))
+                            msg = bson.loads(box0.decrypt(m.box.decrypt(res["Message"])))
                             print('got msg', msg)
 
                             frm = res["From"]["PubKey"]
