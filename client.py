@@ -227,7 +227,6 @@ class Backend:
                         Socket(sock).put(
                             Asm.msg_packet(msg, Asm.from_to(res["To"], res["From"]))
                         )
-                        
                         sender = True
                         break
                 # You're recieving a KEX, so reply with a new KEX to get the MSG.
@@ -320,7 +319,7 @@ class Backend:
         while True:
             if not offline:
                 try:
-                    obj = BackendIn.get(timeout=5)
+                    obj = BackendIn.get(timeout=3)
                     print("got obj to work on")
                     # this ensures the correct order in which messages are being sent out.
                     # see the recursive part of try_obj()
@@ -333,6 +332,7 @@ class Backend:
                     else:
                         try_obj(obj, sock)
                 except Exception as e:
+                    print("got no obj")
                     pass
             else:
                 for m in group_kexes():
@@ -341,6 +341,7 @@ class Backend:
                     time.sleep(.1)
 
             offline = not offline
+            print("switched offline to", offline)
 
 # set or get the type of a message to send
 class MsgType:
