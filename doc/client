@@ -1,0 +1,25 @@
+Ideas
+have a global command list:
+cmds = [
+        {
+        'Name': cd,
+        'Desc': 'chat with someone',
+        'Exec': python func obj,
+        from inspect import signature
+        len(signature(a).parameters)
+        }
+]
+CMDS:
+  cd <Chat-Name> # start chatting with specified chat name (username), no commands will work here.
+  -> .. to get out of the chat, back to ~
+help -> display all the commands in cmds
+type <MSG-type> -> set the type for the next message you'll send (if not done, type TEXT is assumed)
+
+
+
+first, after login, check if any messages in db are delivered = FALSE, when do, start MsgCleanupthread.
+when message is sent, put it in database, encrypted with fernet, private bytes as key (Delivered = False).
+when message is sent, start new thread that is dedicated for sending this message:
+send kex, wait, recieve kex from other clients' background thread. when you reviece kex, maybe look if its the right one, as there could be many "send threads" running.
+
+background listen thread, send kex when recieve kex

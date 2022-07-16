@@ -1,0 +1,22 @@
+Kex Cache A: []
+Kex Cache B: []
+
+A sends B kex on send thread
+Kex cache A: [[FromA, ToB]]
+Kex cache B: []
+
+B recieves A's kex on recieve thread
+Kex Cache A: [[FromA, ToB]]
+Kex Cache B: [[FromA, ToB]]
+
+B's recieve thread sends B's kex to A's recieve thread.
+Kex Cache A: [[FromA, ToB]]
+Kex Cache B: [[FromA, ToB], [FromB, ToA]]
+
+A recieves B's kex on recieve thread
+Kex Cache A: [[FromA, ToB], [FromB, ToA]]
+Kex Cache B: [[FromA, ToB], [FromB, ToA]]
+
+A's recieve thread knows it sent a kex before, so starts sending encrypted message to B's recieve thread
+
+B's recieve thread gets the message, conversation finished

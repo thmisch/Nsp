@@ -1,0 +1,23 @@
+Ideas
+Multiple Users, so each one needs an entry
+ -> At the start if user >1 show user choose dialog
+ -> put in password at star
+
+ db:
+ [
+        {
+        'User': MYSELF_USER_PACKET,
+        'Chats': [
+                {
+                'User': PEER_USER_PACKET,
+                'Messages': [
+                        {
+                        'Message': 'encrypted with *your own* RSA key',
+                        'Type': int
+                        'RecvTime': unix time
+                        }
+                ]
+                }
+        ]
+        }
+ ]

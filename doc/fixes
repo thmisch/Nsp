@@ -1,0 +1,21 @@
+Key exchange key creation & verification
+
+Message handling
+
+Client ui, commands etc
+
+Tell background the next kex key to use
+
+asdasd
+
+Client should know if the server dropped the message:
+does that with checking after if the messege recieved after
+a kex request by someone else, that the request was faulty, either by the server or client.
+
+handle messages, think about how they should be recieved/what should be done afterwards.
+
+
+sending messages to USERNAME only is not enough, the format needs to include the signature, and a public key to verify
+the name
+
+and also, before the second connection, each connection after that also: the signature has to be done again, as the server checks if multiple signatures of clients are "online". The 

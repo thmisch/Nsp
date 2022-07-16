@@ -1,0 +1,9 @@
+implement a way for messages to be stored on the server side.
+
+a kex will be sent by user a to user b
+user b is offline, so the sever thread from a puts it in a's USR packet at 'queue'
+
+User b connects,
+serverthread b goes through all users in cache, looks at every kex in there, looks for TO == b.
+if TO is found, the respective packets will be sent out.
+if nothing is found, an empty or error dict will be sent, to notify the client.
