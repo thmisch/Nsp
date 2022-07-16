@@ -1,4 +1,6 @@
 # Nsc - new simple chat
+![logo](logo.svg)
+
 ## Introduction
 Nsc is a simple instant messaging platform. It aims to be a simple alternative
 to other secure chat platforms like Signal or Matrix, that still provides the
