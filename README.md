@@ -75,6 +75,7 @@ Nsc isn't quite finished yet:
 - group chats
 - A usable client (cli based)
 - voice calling (*may* be possible, probably not though since TCP and Nsc's encryption are pretty slow)
+- don't expect the server to be nice, correctly handle errors in the client (instead of crashing) 
 
 ## current security issues
 Nsc as a whole features great security, but there still are minor issues:
@@ -88,7 +89,7 @@ when you encounter such report it to <Nsc-ID> please.
 (Probably there's still some weird bug in the protocol :o)
 
 ## Comparison to other chat systems
-Nsc is very diffrent from traditional chat systems. It uses a client-server
+Nsc is completely diffrent from traditional chat systems. It uses a client-server
 architecture, but doesn't require much resources or much of anything to host the server:
 A raspberrypi (8gb) has enough memory to have 60-70 million clients connected 
 (if the cpu and/or network can handle that though :D...)
@@ -102,7 +103,7 @@ To solve this, the client is just trying to resend the messages at a certian int
 that if a user would like to send a message to some other offline peer, they'd have to be connected
 all of the time, retrying to send it every few seconds.
 
-This is very different from e.g. email or signal, matrix.
+This is very different from e.g. E-mail, Signal or Matrix.
 So the best option is to use a device that has very little downtime: your cellphone.
 
 ## Implementations
@@ -111,6 +112,11 @@ computers. Due to the above described differences, Nsc needs high availability
 to function correctly, which usually a PC can't provide 
 (people turn them off because they're loud and inefficient).
 Which means: it's like encrypted IRC at this point.
+
+Also this implementation is currently very much **untested** which sadly 
+showed before commit cd2dad8c5ee6c33ce865851336cdbc40ac245bb7 where the whole 
+security was broken. Prepare for more bugs like these and please don't use Nsc 
+just yet if you expect a finished project. 
 
 In the future I'll implement the protocol in a language like Javascript, or convert sth. to webASM,
 that can be used on mobile operating systems like android and IOS to create native apps for them.
