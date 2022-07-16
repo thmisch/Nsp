@@ -122,3 +122,7 @@ In the future I'll implement the protocol in a language like Javascript, or conv
 that can be used on mobile operating systems like android and IOS to create native apps for them.
 I also want to add a web UI that can be used on desktop devices, that communicates via the phone
 app, much like WhatsApp Web.
+
+### Contact / Contribute
+If you have some issues, encounter a bug or a new Idea, please open a new ticket 
+on the sourcehut site, and I'll try to reslove it.
