@@ -108,9 +108,9 @@ So the best option is to use a device that has very little downtime: your cellph
 ## Implementations
 Currently there's only one implementation that's designed for linux desktop
 computers. Due to the above described differences, Nsc needs high availability
-to funcion correctly, which usually a desktop can't provide 
-(people turn them off, because they're loud and inefficient).
-Which means: its like encrypted IRC at this point.
+to function correctly, which usually a PC can't provide 
+(people turn them off because they're loud and inefficient).
+Which means: it's like encrypted IRC at this point.
 
 In the future I'll implement the protocol in a language like Javascript, or convert sth. to webASM,
 that can be used on mobile operating systems like android and IOS to create native apps for them.

@@ -94,7 +94,6 @@ class TLServer(socketserver.TCPServer):
 class ThreadingTLServer(socketserver.ThreadingMixIn, TLServer):
     pass
 
-
 class TLSRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
         proto = Scp(self.request)

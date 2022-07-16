@@ -6,6 +6,7 @@ import time
 import socketserver
 from signal import signal, SIGINT
 import readline
+
 BackendIn = Queue()
 BackendOut = Queue()
 ErrorEvent = threading.Event()
