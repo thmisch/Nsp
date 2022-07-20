@@ -447,11 +447,11 @@ class Client:
 
     def displ_msg(self, msg, alias):
         who = B64Encoder.encode(msg['who']) if not alias else alias
-        time = self.t_diff(msg['time'])
+        tim = self.t_diff(msg['time'])
         #print(msg)
         m = msg['msg'].get('utf-8')
         t = time.time()
-        print(f"\n----\n{time} {t}by {who}:\n{m}\n----\n")
+        print(f"\n----\n{tim} {t}by {who}:\n{m}\n----\n")
 
     def shell(self):
         pass
