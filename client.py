@@ -450,8 +450,8 @@ class Client:
         time = self.t_diff(msg['time'])
         #print(msg)
         m = msg['msg'].get('utf-8')
-
-        print(f"\n----\n{time} by {who}:\n{m}\n----\n")
+        t = time.time()
+        print(f"\n----\n{time} {t}by {who}:\n{m}\n----\n")
 
     def shell(self):
         pass
@@ -477,6 +477,8 @@ class Client:
                         ),
                         MsgType(inp).set("utf-8")
                         )
+                    t = time.time()
+                    print(f"send time {t}")
                     self.backend_in.put(m)
 
     def listen_backend(self, s):

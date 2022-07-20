@@ -76,7 +76,7 @@ class UIMessages:
     pass_prompt = "Password: "
 
 # TODO: don't hardcode this
-CON = ("87.187.26.105", 32471)
+CON = ("themisch.strangled.net", 32471)
 
 COMMON_PATH = Path(xdg_data_home(), "nsc")
 def backend_socket_path(extra):
