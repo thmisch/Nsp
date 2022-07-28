@@ -1,5 +1,5 @@
 # Nsc - new simple chat
-![logo](logo.svg)
+![Nsc-logo](logo.svg)
 
 ## Introduction
 Nsc is a simple instant messaging platform. It aims to be a simple alternative
@@ -17,7 +17,7 @@ pip install bson xdg pynacl toml
 
 ## Features:
 ### Client-server architecture
-This means that you won't have to connect to peers directly while using Nsc,
+This means that you **won't** have to connect to peers directly while using Nsc,
 unlike a peer-to-peer architecture. This design decision means that The server
 could log metadata, e.g the frequency of the messages your sending, the sizes 
 of the messages, time information etc. This design is pretty usual though and
@@ -87,7 +87,7 @@ when it's decrypted, the entire database lives unencrypted in memory for the
 rest of the programs lifetime. This opens a lot of possibilities for an attacker
 to just read the unencrypted data (still very unlikely, would need a python exploit to work).
 - If someone sends you a message they *could* crash your running client, so 
-when you encounter such report it to <Nsc-ID> please.
+when you encounter such open an issue please.
 (Probably there's still some weird bug in the protocol :o)
 
 ## Comparison to other chat systems
@@ -106,7 +106,7 @@ that if a user would like to send a message to some other offline peer, they'd h
 all of the time, retrying to send it every few seconds.
 
 This is very different from e.g. E-mail, Signal or Matrix.
-So the best option is to use a device that has very little downtime: your cellphone.
+So the best option is to use Nsc on a device that has very little downtime: your cellphone.
 
 ## Implementations
 Currently there's only one implementation that's designed for linux desktop
