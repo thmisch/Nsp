@@ -45,22 +45,34 @@ class Socket:
     def get(self):
         return self.peer.recvobj()
 
+#class Asm:
+#    
+#    def user_packet(pubkey):
+#        return {"Type": "USR", "PubKey": pubkey}####
+#
+#    def from_to(from_usr_packet, to_peer_packet):
+#        return {"From": from_usr_packet, "To": to_peer_packet}#
+#
+#    def kex_packet(exchange_key, from_to):
+#        return {"Type": "KEX", "PubExKey": exchange_key, **from_to}##
+#
+#    def msg_packet(message, from_to):
+#        return {"Type": "MSG", "Message": message, **from_to}
+
 # build the protocol packets
+PACK = Enum("PACK", "TYPE USR KEX MSG PK PEK FROM TO CONTS")
 class Asm:
-    def user_packet(pubkey):
-        return {
-            "Type": "USR",
-            "PubKey": pubkey,
-        }
-
-    def from_to(from_usr_packet, to_peer_packet):
-        return {"From": from_usr_packet, "To": to_peer_packet}
-
-    def kex_packet(exchange_key, from_to):
-        return {"Type": "KEX", "PubExKey": exchange_key, **from_to}
-
-    def msg_packet(message, from_to):
-        return {"Type": "MSG", "Message": message, **from_to}
+    def usr(pk):
+        return {PACK.TYPE: PACK.USR, PACK.PK: pk}
+    
+    def from_to(from, to):
+        return {PACK.FROM: from, PACK.TO: to}
+    
+    def kex(pek, from_to):
+        return {PACK.TYPE: PACK.KEX, PACK.PEK: pek, **from_to}
+    
+    def msg(conts, from_to):
+        return {PACK.TYPE: PACK.MSG, PACK.CONTS: conts, **from_to}
 
 def Err(what):
     return {"err": what}

@@ -27,7 +27,7 @@ class Scp:
         self.verified_names = list()
 
     def verify_name(self, obj):
-        peer_name = obj.get("PubKey")
+        peer_name = obj.get(PACK.PK)
         # TODO: add check for nothin here
         peer_exchange_key = PublicKey(peer_name)
         exchange_key = PrivateKey.generate()
@@ -39,9 +39,9 @@ class Scp:
         # a key exchange is possible. If not then we know the peer is trying to
         # get unwanted access to another peers data.
         res = Socket(self.peer).get()
-        typ = res.get("Type") if type(res) == dict else None
-        if typ == "MSG" and res.get("Message"):
-            msg = box.decrypt(res.get("Message"))
+        typ = res.get(PACK.TYPE) if type(res) == dict else None
+        if typ == PACK.MSG and res.get(PACK.CONTS):
+            msg = box.decrypt(res.get(PACK.CONTS))
             if msg == peer_name:
                 self.verified_names.append(peer_name)
                 cache.append({peer_name: self.peer})
@@ -51,11 +51,10 @@ class Scp:
     # try to find potentially bad packets, which could crash the reciepients
     # client.
     def check_packet(self, packet):
-        typ = packet["Type"]
-        if typ == "KEX":
+        if packet[PACK.TYPE] == PACK.KEX:
             # if a bad key was provided, this will crash the current server
             # thread, disconnecting the attacker.
-            PublicKey(packet.get("PubExKey"))
+            PublicKey(packet.get(PACK.PEK))
             
     def handle(self):
         sent = False
@@ -67,9 +66,9 @@ class Scp:
             self.end()
             return
 
-        if res.get("Type") in ("KEX", "MSG"):
-            # Only verified names are allowed send messages
-            if (not res["From"]["PubKey"] in self.verified_names) or self.check_packet(res):
+        if res.get(PACK.TYPE) in (PACK.KEX, PACK.MSG):
+            # Only verified clients are allowed send messages
+            if (not res[PACK.FROM][PACK.PK] in self.verified_names) or self.check_packet(res):
                 print("unverified_peer or bad packet")
                 self.end()
                 return
@@ -77,7 +76,7 @@ class Scp:
             # to recieve the message instead.
             for user in cache:
                 recipient = next(iter(user))
-                if res["To"]["PubKey"] == recipient:
+                if res[PACK.TO][PACK.PK] == recipient:
                     Socket(user[recipient]).put(res)
                     sent = True
 
@@ -85,7 +84,7 @@ class Scp:
             if not sent:
                 Socket(self.peer).put(Err("offline"))
 
-        elif res.get("Type") == "USR":
+        elif res.get(PACK.TYPE) == PACK.USR:
             self.verify_name(res)
         print(res)
 

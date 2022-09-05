@@ -27,7 +27,6 @@ import readline
 BackendIn = Queue()
 BackendOut = Queue()
 ErrorEvent = threading.Event()
-Stop = threading.Event()
 
 # create and/or decrypt the database
 class Database:
@@ -90,9 +89,9 @@ class Msg:
     def recipient(self, senders_kex):
         self.kex_packet = Asm.kex_packet(
             self.exchange_key.public_key.encode(),
-            Asm.from_to(senders_kex["To"], senders_kex["From"]),
+            Asm.from_to(senders_kex[PACK.TO], senders_kex[PACK.FROM]),
         )
-        self.box = Box(self.exchange_key, PublicKey(senders_kex["PubExKey"]))
+        self.box = Box(self.exchange_key, PublicKey(senders_kex[PACK.PEK]))
         self.sent = False
         return self
 
@@ -195,7 +194,7 @@ class Backend:
         # do the key exchange
         public_key = key.public_key.encode()
         Socket(sock).put(Asm.user_packet(public_key))
-        server_exchange_key = PublicKey(Socket(sock).get()["PubKey"])
+        server_exchange_key = PublicKey(Socket(sock).get()[PACK.PK])
 
         # encrypt and send the the public key to the server
         box = Box(key, server_exchange_key)
@@ -229,46 +228,46 @@ class Backend:
             res = Socket(sock).get()
             typ = type(res) == dict
             sender = False
-            if typ and res.get("Type") == "KEX":
+            if typ and res.get(PACK.TYPE) == PACK.KEX:
                 print('got kex')
 
                 for i, kex in enumerate(self.kex_cache):
                     r = next(iter(kex))
                     m = kex[r]
-                    if r == res["From"]["PubKey"] and m.sent:
+                    if r == res[PACK.FROM][PACK.PK] and m.sent:
                         del self.kex_cache[i]
 
                         print("sending message")
-                        box0 = Box(self.db["sk"], PublicKey(res["From"]["PubKey"]))
-                        box1 = Box(m.exchange_key, PublicKey(res["PubExKey"]))
+                        box0 = Box(self.db["sk"], PublicKey(res[PACK.FROM][PACK.PK]))
+                        box1 = Box(m.exchange_key, PublicKey(res[PACK.PEK]))
                         msg = box1.encrypt(box0.encrypt(bson.dumps(m.message)))
                         Socket(sock).put(
-                            Asm.msg_packet(msg, Asm.from_to(res["To"], res["From"]))
+                            Asm.msg_packet(msg, Asm.from_to(res[PACK.TO], res[PACK.FROM]))
                         )
                         sender = True
                         break
                 # You're recieving a KEX, so reply with a new KEX to get the MSG.
                 if not sender:
-                    if res["From"] == res["To"]:
+                    if res[PACK.FROM] == res[PACK.TO]:
                         print("won't send another kex to yourself, duh.")
                         break
                     # reply with another kex
                     m = Msg().recipient(res)
-                    self.kex_cache.append({res["From"]["PubKey"]: m})
+                    self.kex_cache.append({res[PACK.FROM][PACK.PK]: m})
                     Socket(sock).put(m.kex_packet)
                     print('replied kex')
 
-            elif typ and res.get("Type") == "MSG":
+            elif typ and res.get(PACK.TYPE) == PACK.MSG:
                 for i, kex in enumerate(self.kex_cache):
-                    m = kex.get(res["From"]["PubKey"])
+                    m = kex.get(res[PACK.FROM][PACK.PK])
                     if m:
                         del self.kex_cache[i]
                         try:
-                            box0 = Box(self.db["sk"], PublicKey(res["From"]["PubKey"]))
-                            msg = bson.loads(box0.decrypt(m.box.decrypt(res["Message"])))
+                            box0 = Box(self.db["sk"], PublicKey(res[PACK.FROM][PACK.PK]))
+                            msg = bson.loads(box0.decrypt(m.box.decrypt(res[PACK.CONTS])))
                             print('got msg', msg)
 
-                            frm = res["From"]["PubKey"]
+                            frm = res[PACK.FROM][PACK.PK]
                             BackendOut.put(self.asm_db(frm, msg, frm))
                             print('puttet msg out')
                         except Exception as e:
@@ -283,14 +282,14 @@ class Backend:
     def BgPut(self):
         global BackendIn
         def get_entry_from(obj):
-            k = obj.kex_packet["To"]["PubKey"]
+            k = obj.kex_packet[PACK.TO][PACK.PK]
             entry = {k: obj}
             return k, entry
 
         # return the first offline message thats intended to be sent to `name`
         def get_another_offline(name):
             for m in self.db['offline_kexs']:
-                if name == m.kex_packet["To"]["PubKey"]:
+                if name == m.kex_packet[PACK.TO][PACK.PK]:
                     return m
 
         # try to send a KEX packet to the peer 
@@ -307,7 +306,7 @@ class Backend:
                     self.db['offline_kexs'].append(obj)
             else:
                 # save the sent out message
-                BackendOut.put(self.asm_db(k, obj.message, self.db['my_usr_pkt']['PubKey']))
+                BackendOut.put(self.asm_db(k, obj.message, self.db['my_usr_pkt'][PACK.PK]))
                 print('puttet msg out')
                 if obj in self.db['offline_kexs']:
                     self.db['offline_kexs'].remove(obj)
@@ -321,12 +320,12 @@ class Backend:
             l = list()
 
             for m in self.db['offline_kexs']:
-                l.append(m.kex_packet["To"]["PubKey"])
+                l.append(m.kex_packet[PACK.TO][PACK.PK])
             l = set(l)
             res = list()
             for why in l:
                 for m in self.db['offline_kexs']:
-                    if why == m.kex_packet["To"]["PubKey"]:
+                    if why == m.kex_packet[PACK.TO][PACK.PK]:
                         res.append(m)
                         break
             return res
@@ -465,7 +464,7 @@ class Client:
         elif len(inp) == 2 and inp == '..':
             self.contact = Contact()
         elif len(inp) == 4 and inp == 'info':
-            print(B64Encoder.encode(self.mup['PubKey']))
+            print(B64Encoder.encode(self.mup[PACK.PK]))
         else:
             for addr in self.contact.addrs:
                 if addr:
