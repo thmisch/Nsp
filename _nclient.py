@@ -3,46 +3,23 @@ from collections import namedtuple
 from _common import *
 # TODO: INCOMING, OUTGOING QUEUES
 
-class Errors(Enum):
-    AuthFailed = 1
-
-# Connect to server
-# AUTH procedure:
-#  CLIENT: send [Apk, Apk encrypted with shared secret of Ask and Spk]
-#  SERVER: decrypt res[1] with shared secret of Ssk and res[0]
-#          if no errors, and decrypted res[1] == res[0], mark client as logged in
-#          else disconnect client.
-#          send Spk encrypted with shared secret of Ssk and res[0]
-#  CLIENT: decrypt with shared secret of Ask and Spk
-#          if result == Spk, stay connected.
-#          else disconnect
-# This shared secret is now used by both parties to en/de-crypt everything that's going in and out.
-#
-
-# FROM/TO, MSG
-# [PK, MSG]
-# If you recieve a packet, the first entry is always FROM
-# If you send a packet, put the one your sending TO first.
-# This is what would A sends: 
-#  [Bpk, Arpk encrypted with Ask&Bpk]
-# This is what the server would then send to B:
-#  [Apk, Arpk encrypted woth Ask&Bpk]
-#  If B can decrypt [1] with Bsk & [0], they can trust A, 
-# and have the rpk A's gonna use for their message
-
-
-
 # EXAMPLE connection trace
 '''
+AUTH procedure
 A -> S: [Apk, Apk encrypted with Ask & Spk]
 
-A and S define shared_scecret to Ask & Spk or Ssk & Apk
+A & S derive shared_scecret from Ask & Spk or Ssk & Apk
 
-# This message isn't really needed, as when the client  
-S -> A: [encrypted with shared_secret [Spk, Spk encrypted with shared_secret]]
+A & S perform a key exchange to get a shared session key
+  A -> S: [encrypted with shared_secret [A_random_pk, None]]
+  S -> A: [encrypted with shared_secret [S_random_pk, None]]
 
-S -> A: []
-[session_encryption]:
+A & S derive shared_session_secret from A_random_sk & S_random_pk or S_random_sk & A_random_pk
+
+From now on messages will be encrypted with both keys, because why not.
+If someone were to crack the session key, they'd also need to crack another key.
+(Just to get the metadata, no message contents)
+
 '''
 
 # The Nsc client API
@@ -50,6 +27,9 @@ S -> A: []
 #  connect to a server
 #  authenticate
 #  listen for messages, send messages
+
+class ServerAuthError(Exception): pass
+
 class NsClientApi:
     def __init__(self, myself: Entity) -> None:
         self.myself = myself
@@ -68,28 +48,27 @@ class NsClientApi:
         # If the server can decrypt this sucessfully, it knows you are you. 
         my_proof = Message(self.myself.pk, self.myself.pk.encode(), key=shared_secret)
         sock.put(my_proof.encrypt())
-
-        # If you can decrypt the servers message contents sucessfully, you now they're legit 
+ 
+        # From now on use the unique shared secret between you and the server
+        # as a first encryption layer
         sock.key = shared_secret
-        server_proof = Message(key=shared_secret).decrypt(sock.get())
-        if server.pk == server_proof.pk == PublicKey(server_proof.conts):
+
+        try:
             my_session_sk = PrivateKey.generate()
 
             # do a key exchange, for the session key
             sock.put(Message(my_session_sk.public_key).encrypt())
             server_session_pk = Message().decrypt(sock.get()).pk
-            shared_session_key = Box(my_session_sk, server_session_pk).shared_key()
+            shared_session_secret = Box(my_session_sk, server_session_pk).shared_key()
 
-            print("session_secret is", Base64Encoder.encode(shared_session_key))
+            # Use the session secret as a second layer for security
+            sock.session_key = shared_session_secret
 
-            # Encrypt twice
-            sock.session_key = shared_session_key
-            sock.put(msgpack.dumps(True))
+            sock.put(msgpack.dumps(["Bester chat, 100% sicher und simple!"]))
             return sock
-        else:
-            print("server auth fail")
-            socket.close(sock.sock)
-            return Errors.AuthFailed
+
+        except CryptoError:
+            raise ServerAuthError
 
 #my_sk = PrivateKey.generate()
 my_sk = PrivateKey(b'\xc9\x1c4a-;\xbf`\x87n#+\x87\xa6V\xef\xeaNKtCx\x81N{\xf3\xf8+\xba\xe4\xe2!')
@@ -100,4 +79,3 @@ myself = Entity(testing_server_entity.ip, testing_server_entity.port, pk=my_pk, 
 
 clnt = NsClientApi(myself)
 server_connection = clnt.initiate_server_connection(testing_server_entity)
-time.sleep(1)

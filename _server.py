@@ -35,32 +35,30 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def authenticate(self, raw: bytes) -> (None or bool):
         entity_proof = Message().decrypt(raw)
         shared_secret = Box(testing_server_entity.sk, entity_proof.pk).shared_key()
-        print("initial_secret is", Base64Encoder.encode(shared_secret))
         entity_proof = Message(key=shared_secret).decrypt(raw)
 
         if entity_proof.pk == PublicKey(entity_proof.conts):
             my_session_sk = PrivateKey.generate()
-            print("client auth success", Entity(pk=entity_proof.pk).encode())
-
+            # Use the unique shared secret between you and the entity as a first encryption layer.
             self.sock.key = shared_secret
-            # Authenticate to the client, as they did for you.
-            my_proof = Message(testing_server_entity.pk, testing_server_entity.pk.encode(), key=shared_secret)
-            self.sock.put(my_proof.encrypt())
-
 
             # do a key exchange to get a session key
             entity_session_pk = Message().decrypt(self.sock.get()).pk
             self.sock.put(Message(my_session_sk.public_key).encrypt())
-            shared_session_key = Box(my_session_sk, entity_session_pk).shared_key()
+            shared_session_secret = Box(my_session_sk, entity_session_pk).shared_key()
 
-            self.sock.session_key = shared_session_key
+            self.sock.session_key = shared_session_secret
             data = msgpack.loads(self.sock.get())
             print(data)
 
             # Make the Entity accessible to others
             if self.count_entity(entity_proof.pk) < server_config_max_logins:
-                self.my_entity = entity_proof.pk.encode()
+                self.my_entity = entity_proof.pk
                 Online.append({self.my_entity: self.request})
+
+                print("client auth success", Entity(pk=entity_proof.pk).encode())
+                print("initial_secret is", Base64Encoder.encode(shared_secret))
+                print("session_secret is", Base64Encoder.encode(shared_session_secret))
             else:
                 # disconnect entity because they are already logged in
                 return True

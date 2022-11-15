@@ -1,17 +1,17 @@
 import socket
-from nacl.public import PrivateKey, Box, PublicKey
-from nacl.secret import SecretBox
-from nacl.encoding import URLSafeBase64Encoder as Base64Encoder
-import nacl.pwhash
-import nacl.utils
 import msgpack
-from enum import Enum
 import struct
 import threading
+from enum import Enum
 from queue import Queue
-import nacl.hash
-import time
 from sys import getsizeof
+
+from nacl.encoding import URLSafeBase64Encoder as Base64Encoder
+from nacl.public import PrivateKey, Box, PublicKey
+from nacl.secret import SecretBox
+from nacl.exceptions import CryptoError
+import nacl.pwhash
+import nacl.utils
 
 # def deep_getsizeof(o, ids): https://code.tutsplus.com/tutorials/understand-how-much-memory-your-python-objects-use--cms-25609
 
@@ -59,6 +59,10 @@ class MsgSocket:
 
 # The default and only message type in Nsc:
 #  [DEST, MSG] or just [X, Y]
+# help:
+# If you recieve a packet, DEST is always FROM
+# If you send a packet, DEST is always TO
+
 # X is always a public key, thats automagically getting en/decoded on .encrypt/.decrypt
 # X is either your own public key in AUTH, the recipients or the senders key in any other case.
 # Y can contain any binary data, in AUTH this data is a your encrypted public key, on all other
@@ -110,4 +114,4 @@ class Entity:
 testing_server_sk = PrivateKey(b'\xcc\xb7`\xd4V\x1cvu\rg\xcd\xdd\xbdM\x06\xa3\x9d\xf8\x10\x1e|\x074\x13\xaa$\x1d-\x19\xber\xfd')
 #testing_server_sk = PrivateKey.generate()
 testing_server_pk = testing_server_sk.public_key
-testing_server_entity = Entity("::1", 10349, testing_server_pk, testing_server_sk)
+testing_server_entity = Entity("::1", 10348, testing_server_pk, testing_server_sk)
