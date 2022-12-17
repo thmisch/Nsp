@@ -1,27 +1,38 @@
 from _common import *
 import socketserver
-import time
 Online = []
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
         self.sock = MsgSocket(self.request)
-        self.my_entity = None
+        
+        try:
+            self.authenticate()
 
-        while raw := self.sock.get():
-            if not self.my_entity:
-                if self.authenticate(raw): break
-            # TODO: Handle messages
-            print(Online)
+            while raw := self.sock.get():
+                m = Message().decrypt(raw)
+                # forward messages
+                for E in Online:
+                    pk = next(iter(E))
+                    if m.to == pk:
+                        mx = Message(self.my_entity, m.conts).encrypt()
+                        E[pk].put(mx)
+                print(Online)
+        except Exception as e:
+            print(e)
+        finally:
+            self.cleanup_entity()
+            print("closing")
 
-        self.cleanup_entity()
-        print("closing")
 
     def cleanup_entity(self) -> None:
         for E in Online:
             pk = next(iter(E))
+            if (E[pk].sock.fileno()) < 0:
+                print("closing dead socket")
             if pk == self.my_entity:
-                if (E[pk] == self.request) or (E[pk].fileno()) < 0:
+                # Only close the currently active socket, or any missed closed ones.
+                if (E[pk].sock == self.request):
                     Online.remove(E)
     
     def count_entity(self, entity_pk: PublicKey) -> int:
@@ -32,42 +43,45 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                 count += 1
         return count
 
-    def authenticate(self, raw: bytes) -> (None or bool):
-        entity_proof = Message().decrypt(raw)
-        shared_secret = Box(testing_server_entity.sk, entity_proof.pk).shared_key()
-        entity_proof = Message(key=shared_secret).decrypt(raw)
+    def authenticate(self) -> (None or bool):
+        session_sk = PrivateKey.generate()
 
+        # Do a DH key exchange to create a secure session key.
+        session_secret = Box(session_sk, PublicKey(self.sock.get())).shared_key()
+        self.sock.put(session_sk.public_key.encode())
+
+        self.sock.session_key = session_secret
+
+        # Get the entity's auth information
+        entity_proof_raw = self.sock.get()
+        entity_proof = Message().decrypt(entity_proof_raw)
+        shared_secret = Box(testing_server_entity.sk, entity_proof.pk).shared_key()
+        
+        # TODO: catch decrypt error on failure
+        entity_proof = Message(key=shared_secret).decrypt(entity_proof_raw)
+
+        # Validate entity
         if entity_proof.pk == PublicKey(entity_proof.conts):
-            my_session_sk = PrivateKey.generate()
-            # Use the unique shared secret between you and the entity as a first encryption layer.
             self.sock.key = shared_secret
 
-            # do a key exchange to get a session key
-            entity_session_pk = Message().decrypt(self.sock.get()).pk
-            self.sock.put(Message(my_session_sk.public_key).encrypt())
-            shared_session_secret = Box(my_session_sk, entity_session_pk).shared_key()
-
-            self.sock.session_key = shared_session_secret
-            data = msgpack.loads(self.sock.get())
-            print(data)
-
             # Make the Entity accessible to others
-            if self.count_entity(entity_proof.pk) < server_config_max_logins:
+            if self.count_entity(entity_proof.pk) < server_config_max_logins*2:
                 self.my_entity = entity_proof.pk
-                Online.append({self.my_entity: self.request})
+                Online.append({self.my_entity: self.sock})
 
-                print("client auth success", Entity(pk=entity_proof.pk).encode())
-                print("initial_secret is", Base64Encoder.encode(shared_secret))
-                print("session_secret is", Base64Encoder.encode(shared_session_secret))
+                print("entity auth success", Entity(pk=entity_proof.pk).encode())
+                #print("initial_secret is", Base64Encoder.encode(shared_secret))
+                #print("session_secret is", Base64Encoder.encode(session_secret))
             else:
+                print("too many logins for: ", Entity(pk=entity_proof.pk).encode())
                 # disconnect entity because they are already logged in
                 return True
         else:
-            print("client auth fail", Entity(pk=entity_proof.pk).encode())
+            print("entity auth fail", Entity(pk=entity_proof.pk).encode())
             return True
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    # The newer, the better.
+    # Since IPV6 > IPV4!
     address_family = socket.AF_INET6
 
 if __name__ == "__main__":
