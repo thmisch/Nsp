@@ -37,7 +37,7 @@ class NsClientApi:
     def __init__(self, myself: Entity, server: Entity) -> None:
         self.myself = myself
         self.server = server
-
+        self.kex_lock = Lock()
         # TODO: LOAD this from database on close
         # AND RELAUNCH all the required threads to get things going
         self.kex = {} # {entity: [Message(), Message(), ...]} 
@@ -55,7 +55,7 @@ class NsClientApi:
             m = Message().decrypt(m_raw)
             shared_secret = Box(self.myself.sk, m.pk).shared_key()
             m = Message(key2=shared_secret).decrypt(m_raw)
-
+            
             if not m.frm in self.kex: self.kex[m.frm] = []
 
             # don't send out new key exchange requests while handling
@@ -76,14 +76,16 @@ class NsClientApi:
                     # Most likely though. There's a small chance (0.000006 %) of a duplicate id
                     if m.id == msg.id:
                         print("I'M SENDER")
+                        sender = True
                         try:
-                            print("\n", msg.conts, '\n')
-                            msg.key = Box(PrivateKey(msg.key), pk).shared_key()
+                            print("\n", m.conts, '\n', msg.key, len(m.conts)) #)len(msg.key))
+                            msg.key = Box(msg.key, pk).shared_key()
+                            msg.id = 0 
+                            msg.key2 = shared_secret
 
-
-                            sock.put(msg.encrypt())
+                            #with self.kex_lock:
                             self.kex[m.frm].remove(msg)
-                            sender = True
+                            sock.put(msg.encrypt())
                             break
                         except Exception as e:
                             print("88",len(self.kex))
@@ -93,66 +95,53 @@ class NsClientApi:
                 # I'm not the sender, I'm the reciever and reply with a keyexchange.
                 if not sender:
                     msg = Message(m.frm, key=PrivateKey.generate())
-                    tmp_msg = Message(m.frm, msg.key.public_key.encode(), key2=m.key2, i=m.id)
+                    tmp_msg = Message(m.frm, msg.key.public_key.encode(), key2=shared_secret, i=m.id)
                     msg.key = Box(msg.key, pk).shared_key()
-                    
+                    #msg.id = m.id
+                    #with self.kex_lock:
                     self.kex[m.frm].append(msg)
                     
                     sock.put(tmp_msg.encrypt())
+                    #print("reply")
 
             # The message contents isn't just a public exchange key. 
             # So it must be the message. We need to decrypt its contents.
             except Exception as e:
                 print("104", e, len(self.kex[m.frm]))
+                #traceback.print_exc()
                 # find the right key
                 for msg in self.kex[m.frm]:
                     try:
-                        m.key = msg.key
-                        print("DECRYPTED: ", m.decrypt(m.conts).conts)
-                        self.kex[m.frm].remove(msg)
-                        #break
-                    except Exception as e:
-                        print("113", e)
+                        msg = Message(key=msg.key, key2=shared_secret).decrypt(m_raw)
+                        print("decrypt FIN", msg.conts)
+                        #with self.kex_lock:
+                        if msg in self.kex[m.frm]:
+                            self.kex[m.frm].remove(msg)
+                        break
+                    # Since we're trying all keys, errors are to be expected 
+                    except nacl.exceptions.CryptoError:
                         continue
-            
-            for msg in self.kex[m.frm]:
-                msg.working = False
+            #for msg in self.kex[m.frm]:
+            #    msg.working = False
+            #time.sleep(0.1)
 
-            """for i, mx in enumerate(self.kex[m.frm]):
-                try:
-                    if mx.done:
-                        mx.key = Box(mx.key, PublicKey(m.conts)).shared_key()
-                        d = mx.decrypt(mx.conts)
-                        self.kex[frm].remove(mx)
-
-                    key = PrivateKey.generate()
-                    x = Message(mx.frm, key.public_key.encode(), key=key, key2=Box(self.myself.sk, mx.frm).shared_key())
-                    x.done = True
-                    self.kex[mx.frm][i] = x
-
-                    x.key = None
-                    self.o.put(x.encrypt())
-                    self.kex[mx.frm].remove(mx)
-                except Exception as e:
-                    print(e)
-                    break
-                    #continue
-            """
     # This loop repeadly goes through active messages to send, and sends a 
     # keyexchange message to the other entity.
     def putloop(self) -> None:
         sock = self.initsock()
+        #if argv[1] != "SENDER": return
         while True:
             for entity in self.kex.keys():
                 for m in self.kex[entity]:
                     if m.done:
-                        #self.kex[entity].remove(m)
-                        break
-                    elif not m.working:
+                        self.kex[entity].remove(m)
+                    try:
                         tmp_msg = Message(m.to, m.key.public_key.encode(), key2=m.key2, i=m.id)
                         sock.put(tmp_msg.encrypt())
-                        print("re-tried sending KEX", print(len(self.kex)))
-            time.sleep(2)
+                    except Exception as e:
+                        traceback.print_exc()
+
+                    time.sleep(m.interval_s)
 
     def initsock(self) -> MsgSocket:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -183,7 +172,7 @@ class NsClientApi:
         m = Message(to_pk, message, key=PrivateKey.generate(), key2=Box(self.myself.sk, to_pk).shared_key(), 
             i=secrets.randbelow(2**24))
         if not m.to in self.kex: self.kex[m.to] = []
-        self.kex[m.to].insert(0, m)
+        self.kex[m.to].append(m)
 
 my_sk = PrivateKey.generate()
 other_sk = PrivateKey(b'\xc9\x1c4a-;\xbf`\x87n#+\x87\xa6V\xef\xeaNKtCx\x81N{\xf3\xf8+\xba\xe4\xe2!')
@@ -194,6 +183,7 @@ other = Entity(testing_server_entity.ip, testing_server_entity.port, pk=other_sk
 
 if argv[1] == "SENDER":
     api = NsClientApi(myself, testing_server_entity)
-    api.sendto(other.pk, b"HIYA, TESTING!")
+    for i in range(10000):
+        api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=i).encode())
 else:
     api = NsClientApi(other, testing_server_entity)

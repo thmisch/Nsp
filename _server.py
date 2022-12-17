@@ -15,7 +15,7 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                 for E in Online:
                     pk = next(iter(E))
                     if m.to == pk:
-                        mx = Message(self.my_entity, m.conts).encrypt()
+                        mx = Message(self.my_entity, m.conts, i=m.id).encrypt()
                         E[pk].put(mx)
                 print(Online)
         except Exception as e:

@@ -1,7 +1,7 @@
 import socket
 import msgpack
 import struct
-from threading import Thread
+from threading import Thread, Lock
 from enum import Enum
 from queue import Queue
 from sys import getsizeof
@@ -86,7 +86,7 @@ class Message:
         self.key = key
         self.key2 = key2
         self.done = False
-        self.working = False
+        self.interval_s = 0.0
 
         self.id = i
 
@@ -132,4 +132,4 @@ class Entity:
 testing_server_sk = PrivateKey(b'\xcc\xb7`\xd4V\x1cvu\rg\xcd\xdd\xbdM\x06\xa3\x9d\xf8\x10\x1e|\x074\x13\xaa$\x1d-\x19\xber\xfd')
 #testing_server_sk = PrivateKey.generate()
 testing_server_pk = testing_server_sk.public_key
-testing_server_entity = Entity("::1", 11752, testing_server_pk, testing_server_sk)
+testing_server_entity = Entity("::1", 11754, testing_server_pk, testing_server_sk)
