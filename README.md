@@ -1,9 +1,10 @@
 # Nsc - new simple chat
 Nsc is a new KISS instant messaging platform.
 
-In this repository you'll find documentation of
-the [base protocol](doc/protocol.md), [protocol extensions](doc/protocol-extensions.md) and the
-server and client reference implementations.
+In this repository you'll find documentation of the
+[base protocol](doc/protocol.md), 
+[protocol extensions](doc/protocol-extensions.md)
+and the server and client reference implementations.
 
 ## Why use Nsc over other messengers?
 Tired of slow, insecure, privacy infringing and bloated systems?
@@ -31,8 +32,10 @@ sent message (#1). This is the procedure used for sending messages:
 #1: key exchange using random, one time exchange keys
    A -(KEX)> B
    B -(KEX)> A
-#2: A encrypts their message with the shared secret of A(sk) and B(pk) (their main, unchanging keys).
-#3: Now A encrypts the message again, but this time with the shared secret of A(rsk) and B(rpk) (their random, one time keys)
+#2: A encrypts their message with the shared secret 
+    of A(sk) and B(pk) (their main, unchanging keys).
+#3: Now A encrypts the message again, but this time with the 
+    shared secret of A(rsk) and B(rpk) (their random, one time keys)
 #4: the message can now be sent out securely
    A -(MSG)> B
 ```

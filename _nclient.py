@@ -184,7 +184,7 @@ other = Entity(testing_server_entity.ip, testing_server_entity.port, pk=other_sk
 
 if argv[1] == "SENDER":
     api = NsClientApi(myself, testing_server_entity)
-    for i in range(2000):
-        api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=i).encode())
+    #for i in range(2000):
+    api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=10).encode())
 else:
     api = NsClientApi(other, testing_server_entity)
