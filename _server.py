@@ -1,6 +1,8 @@
 from _common import *
 import socketserver
+
 Online = []
+lock = Lock()
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
@@ -10,16 +12,23 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
             self.authenticate()
 
             while raw := self.sock.get():
+                #if not raw: continue
                 m = Message().decrypt(raw)
                 # forward messages
                 for E in Online:
                     pk = next(iter(E))
                     if m.to == pk:
                         mx = Message(self.my_entity, m.conts, i=m.id).encrypt()
-                        E[pk].put(mx)
+                        try:
+                            E[pk].put(mx)
+                        except Exception as e:
+                            if not e in (BrokenPipeError, ConnectionResetError, OSError):
+                                print("---- sub send ERROR: ")
+                                traceback.print_exc()
                 print(Online)
-        except Exception as e:
-            print(e)
+        except:
+            print("main send: ")
+            traceback.print_exc()
         finally:
             self.cleanup_entity()
             print("closing")

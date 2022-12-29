@@ -1,7 +1,21 @@
-from collections import namedtuple
+"""
+Copyright (C) 2022-2023 themisch
+
+This file is part of Nsc.
+Nsc is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+
+Nsc is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with Nsc.
+If not, see <https://www.gnu.org/licenses/>.
+"""
 
 from _common import *
-# TODO: INCOMING, OUTGOING QUEUES
 
 # EXAMPLE connection trace
 '''
@@ -30,6 +44,7 @@ In the next messages, if we are able to decrypt them, we know whether the server
 #  connect to a server
 #  authenticate
 #  listen for messages, send messages
+lock = Lock()
 
 class KexAuthError(Exception): pass
 
@@ -50,19 +65,17 @@ class NsClientApi:
     def getloop(self) -> None:
         sock = self.initsock()
         while True:
-            m_raw = sock.get()
+            raw_m = sock.get()
+            #if not raw_m: continue
 
-            m = Message().decrypt(m_raw)
+            m = Message().decrypt(raw_m)
             shared_secret = Box(self.myself.sk, m.pk).shared_key()
-            m = Message(key2=shared_secret).decrypt(m_raw)
-            
-            if not m.frm in self.kex: self.kex[m.frm] = []
-
-            # don't send out new key exchange requests while handling
-            for msg in self.kex[m.frm]:
-                msg.working = True
+            m = Message(key2=shared_secret).decrypt(raw_m)
             
             try:
+                if not m.frm in self.kex: self.kex[m.frm] = []
+
+                # If this raises an error, we've just found out that we've recieved the actual content of a message
                 pk = PublicKey(m.conts)
 
                 # 1. A reply to a keyexchange I initiated, so I'm the sender in that case
@@ -72,76 +85,62 @@ class NsClientApi:
                 # Option 1, i'm the sender, and the message I just recieved is a reply to my Keyexchange 
                 sender = False
                 for i, msg in enumerate(self.kex[m.frm]):
-                    # The Msg object has contents, I'm the sender if the reply kex has the same ID as I have
-                    # Most likely though. There's a small chance (0.000006 %) of a duplicate id
+                    # find the right message I want to send by looking at the ID of the reply keyexchange
                     if m.id == msg.id:
                         print("I'M SENDER")
                         sender = True
                         try:
-                            print("\n", m.conts, '\n', msg.key, len(m.conts)) #)len(msg.key))
                             msg.key = Box(msg.key, pk).shared_key()
-                            msg.id = 0 
                             msg.key2 = shared_secret
-
-                            self.kex[m.frm].remove(msg)
+                            with lock:
+                                self.kex[m.frm].remove(msg)
                             sock.put(msg.encrypt())
-                            #break
-                        except Exception as e:
-                            print("88",len(self.kex))
-                            traceback.print_exc()
-                            continue
+                            break
 
-                # I'm not the sender, I'm the reciever and reply with a keyexchange.
+                        except nacl.exceptions.TypeError:
+                            print("----------------TYPE ERROR######")
+                            print("usually means you've got the same msg.id for 2 msgs or more")
+
+                        except:
+                            traceback.print_exc()
+
+                # I'm not the sender, I'm the reciever AND reply with a keyexchange.
                 # TODO: CHECK DUPLICATE MESSAGES USING ID
                 if not sender:
                     msg = Message(m.frm, key=PrivateKey.generate())
                     tmp_msg = Message(m.frm, msg.key.public_key.encode(), key2=shared_secret, i=m.id)
                     msg.key = Box(msg.key, pk).shared_key()
-                    #msg.id = m.id
+                    #with lock:
                     self.kex[m.frm].append(msg)
                     
                     sock.put(tmp_msg.encrypt())
 
             # The message contents isn't just a public exchange key. 
-            # So it must be the message. We need to decrypt its contents.
-            except Exception as e:
-                print("104", e, len(self.kex[m.frm]))
-                #traceback.print_exc()
-                # find the right key
+            # So it must be the ACTUAL message content.
+            except nacl.exceptions.ValueError:
+                # find the right decryption key
                 for i, msg in enumerate(self.kex[m.frm]):
                     try:
-                        msg = Message(key=msg.key, key2=shared_secret).decrypt(m_raw)
-                        print("decrypt FIN", msg.conts)
-                        if msg in self.kex[m.frm]: self.kex[m.frm].remove(msg)
+                        md = Message(key=msg.key, key2=shared_secret).decrypt(raw_m)
+                        print("decrypt FIN", md.conts)
+                        with lock:
+                            self.kex[m.frm].remove(msg)
                         break
-
-                    # Since we're trying all keys, errors are to be expected 
                     except nacl.exceptions.CryptoError:
-                        continue
-            #for msg in self.kex[m.frm]:
-            #    msg.working = False
-            #time.sleep(0.1)
+                        pass
 
     # This loop repeadly goes through active messages to send, and sends a 
     # keyexchange message to the other entity.
     def putloop(self) -> None:
         sock = self.initsock()
-        #if argv[1] != "SENDER": return
         while True:
-            break
-        time.sleep(5)
-        if 1 < 2:
             for entity in self.kex.keys():
-                for m in self.kex[entity]:
-                        try:
+                with lock:
+                    for m in self.kex[entity]:
+                        if type(m.key) != bytes:
                             tmp_msg = Message(m.to, m.key.public_key.encode(), key2=m.key2, i=m.id)
                             sock.put(tmp_msg.encrypt())
-                            time.sleep(m.interval_s)
-                            #break
-                        except Exception as e:
-                            print(e)
-                        #traceback.print_exc()
-
+                time.sleep(0.1)
 
     def initsock(self) -> MsgSocket:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -170,8 +169,7 @@ class NsClientApi:
 
     def sendto(self, to_pk: PublicKey, message: bytes) -> None:
         m = Message(to_pk, message, key=PrivateKey.generate(), key2=Box(self.myself.sk, to_pk).shared_key(), 
-            i=secrets.randbelow(2**32))
-        print(m.id)
+            i=secrets.randbelow(2**63))
         if not m.to in self.kex: self.kex[m.to] = []
         self.kex[m.to].append(m)
 
@@ -184,7 +182,8 @@ other = Entity(testing_server_entity.ip, testing_server_entity.port, pk=other_sk
 
 if argv[1] == "SENDER":
     api = NsClientApi(myself, testing_server_entity)
-    #for i in range(2000):
-    api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=10).encode())
+    for i in range(2000):
+        api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=i).encode())
+    api.sendto(other.pk, "ALL WORKS FINE!! {d}".format(d=0).encode())
 else:
     api = NsClientApi(other, testing_server_entity)

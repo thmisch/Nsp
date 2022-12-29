@@ -1,3 +1,20 @@
+"""
+Copyright (C) 2022-2023 themisch
+
+This file is part of Nsc.
+Nsc is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+
+Nsc is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with Nsc.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import socket
 import msgpack
 import struct
@@ -16,10 +33,14 @@ import time
 import secrets
 from sys import argv
 import traceback
+
 # def deep_getsizeof(o, ids): https://code.tutsplus.com/tutorials/understand-how-much-memory-your-python-objects-use--cms-25609
 
 # How many times the same entity can be logged in at the same time on the same server
 server_config_max_logins = 3
+
+class Config:
+    pass
 
 # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
 
@@ -58,25 +79,39 @@ class MsgSocket:
         # Read the message data
         msg = recvall(self.sock, msglen)
 
-        # decrypt if available
-        if self.key: msg = SecretBox(self.key).decrypt(msg)
-        if self.session_key: msg = SecretBox(self.session_key).decrypt(msg)
+        if msg:
+            # decrypt if available
+            if self.key: msg = SecretBox(self.key).decrypt(msg)
+            if self.session_key: msg = SecretBox(self.session_key).decrypt(msg)
 
         return msg
 
     def __exit__(self):
         self.sock.close()
 
-# The default and only message type in Nsc:
-#  [DEST, MSG] or just [X, Y]
-# help:
-# If you recieve a message, DEST is always FROM
-# If you send a message, DEST is always TO
+"""
+The default and only message type in Nsc:
 
-# X is always a public key, thats automagically getting en/decoded on encrypt()/decrypt()
-# X is either your own public key in AUTH, the recipients or the senders key in any other case.
-# Y can contain any binary data, in AUTH this data is a your encrypted public key, on all other
-# occasions Y contains the message. 
+    [DEST, MSG, ID]
+    or just: [X, Y, ID]
+
+help:
+ If you recieve a message, DEST is always FROM
+ If you send a message, DEST is always TO
+
+Whats X ?
+ * X is always a public key, thats automagically getting en/decoded on encrypt()/decrypt()
+ * X is either your own public key in AUTH, the recipients or the senders key in any other case.
+
+What about Y?
+ * Y can contain any binary data, in AUTH this data is a your encrypted public key, on all other
+   occasions Y contains the message. 
+
+And ID?
+ * ID is always an integer, and never en/de- crypted with key or key2.
+ * IDs job is to IDentify and keep track of messages, while the keyexchange takes place.
+"""
+
 class Message:
     def __init__(self, X: PublicKey=None, Y: bytes=None, key: bytes=None, key2: bytes=None, i: int=0) -> None:
         self.x = X
@@ -116,8 +151,8 @@ class Message:
 class Entity:
     def __init__(self, ip: str=None, port: int=None, pk: PublicKey=None, sk: PrivateKey=None) -> None:
         self.ip, self.port, self.pk, self.sk = ip, port, pk, sk
-        #if (not pk) and sk:
-        #    self.pk = sk.public_key
+        # if (not pk) and sk:
+        #     self.pk = sk.public_key
 
     # En/De-code the Entity in Nsc's standard format.
     def encode(self) -> str:
