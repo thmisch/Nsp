@@ -85,8 +85,8 @@ class Message:
 
         self.key = key
         self.key2 = key2
-        self.done = False
-        self.interval_s = 0.0
+        #self.done = False
+        self.interval_s = 0.01
 
         self.id = i
 

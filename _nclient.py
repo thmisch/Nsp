@@ -37,7 +37,7 @@ class NsClientApi:
     def __init__(self, myself: Entity, server: Entity) -> None:
         self.myself = myself
         self.server = server
-        self.kex_lock = Lock()
+
         # TODO: LOAD this from database on close
         # AND RELAUNCH all the required threads to get things going
         self.kex = {} # {entity: [Message(), Message(), ...]} 
@@ -71,7 +71,7 @@ class NsClientApi:
 
                 # Option 1, i'm the sender, and the message I just recieved is a reply to my Keyexchange 
                 sender = False
-                for msg in self.kex[m.frm]:
+                for i, msg in enumerate(self.kex[m.frm]):
                     # The Msg object has contents, I'm the sender if the reply kex has the same ID as I have
                     # Most likely though. There's a small chance (0.000006 %) of a duplicate id
                     if m.id == msg.id:
@@ -83,26 +83,24 @@ class NsClientApi:
                             msg.id = 0 
                             msg.key2 = shared_secret
 
-                            #with self.kex_lock:
                             self.kex[m.frm].remove(msg)
                             sock.put(msg.encrypt())
-                            break
+                            #break
                         except Exception as e:
                             print("88",len(self.kex))
                             traceback.print_exc()
                             continue
 
                 # I'm not the sender, I'm the reciever and reply with a keyexchange.
+                # TODO: CHECK DUPLICATE MESSAGES USING ID
                 if not sender:
                     msg = Message(m.frm, key=PrivateKey.generate())
                     tmp_msg = Message(m.frm, msg.key.public_key.encode(), key2=shared_secret, i=m.id)
                     msg.key = Box(msg.key, pk).shared_key()
                     #msg.id = m.id
-                    #with self.kex_lock:
                     self.kex[m.frm].append(msg)
                     
                     sock.put(tmp_msg.encrypt())
-                    #print("reply")
 
             # The message contents isn't just a public exchange key. 
             # So it must be the message. We need to decrypt its contents.
@@ -110,14 +108,13 @@ class NsClientApi:
                 print("104", e, len(self.kex[m.frm]))
                 #traceback.print_exc()
                 # find the right key
-                for msg in self.kex[m.frm]:
+                for i, msg in enumerate(self.kex[m.frm]):
                     try:
                         msg = Message(key=msg.key, key2=shared_secret).decrypt(m_raw)
                         print("decrypt FIN", msg.conts)
-                        #with self.kex_lock:
-                        if msg in self.kex[m.frm]:
-                            self.kex[m.frm].remove(msg)
+                        if msg in self.kex[m.frm]: self.kex[m.frm].remove(msg)
                         break
+
                     # Since we're trying all keys, errors are to be expected 
                     except nacl.exceptions.CryptoError:
                         continue
@@ -131,17 +128,20 @@ class NsClientApi:
         sock = self.initsock()
         #if argv[1] != "SENDER": return
         while True:
+            break
+        time.sleep(5)
+        if 1 < 2:
             for entity in self.kex.keys():
                 for m in self.kex[entity]:
-                    if m.done:
-                        self.kex[entity].remove(m)
-                    try:
-                        tmp_msg = Message(m.to, m.key.public_key.encode(), key2=m.key2, i=m.id)
-                        sock.put(tmp_msg.encrypt())
-                    except Exception as e:
-                        traceback.print_exc()
+                        try:
+                            tmp_msg = Message(m.to, m.key.public_key.encode(), key2=m.key2, i=m.id)
+                            sock.put(tmp_msg.encrypt())
+                            time.sleep(m.interval_s)
+                            #break
+                        except Exception as e:
+                            print(e)
+                        #traceback.print_exc()
 
-                    time.sleep(m.interval_s)
 
     def initsock(self) -> MsgSocket:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -170,7 +170,8 @@ class NsClientApi:
 
     def sendto(self, to_pk: PublicKey, message: bytes) -> None:
         m = Message(to_pk, message, key=PrivateKey.generate(), key2=Box(self.myself.sk, to_pk).shared_key(), 
-            i=secrets.randbelow(2**24))
+            i=secrets.randbelow(2**32))
+        print(m.id)
         if not m.to in self.kex: self.kex[m.to] = []
         self.kex[m.to].append(m)
 
@@ -183,7 +184,7 @@ other = Entity(testing_server_entity.ip, testing_server_entity.port, pk=other_sk
 
 if argv[1] == "SENDER":
     api = NsClientApi(myself, testing_server_entity)
-    for i in range(10000):
+    for i in range(2000):
         api.sendto(other.pk, "HIYA, TESTING! {d}".format(d=i).encode())
 else:
     api = NsClientApi(other, testing_server_entity)

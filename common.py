@@ -32,6 +32,7 @@ import nacl.pwhash
 import nacl.utils
 import pickle
 from argparse import ArgumentParser
+from enum import Enum
 bson.patch_socket()
 
 # simplify sending and recieving of messages
@@ -45,51 +46,32 @@ class Socket:
     def get(self):
         return self.peer.recvobj()
 
-#class Asm:
-#    
-#    def user_packet(pubkey):
-#        return {"Type": "USR", "PubKey": pubkey}####
-#
-#    def from_to(from_usr_packet, to_peer_packet):
-#        return {"From": from_usr_packet, "To": to_peer_packet}#
-#
-#    def kex_packet(exchange_key, from_to):
-#        return {"Type": "KEX", "PubExKey": exchange_key, **from_to}##
-#
-#    def msg_packet(message, from_to):
-#        return {"Type": "MSG", "Message": message, **from_to}
+# assemble protocol packets
+class PACKT:
+    USR = 1
+    KEX = 2
+    MSG = 3
 
-# build the protocol packets
-PACK = Enum("PACK", "TYPE USR KEX MSG PK PEK FROM TO CONTS")
+class PACK:
+    TYPE = 0
+    PK   = 4
+    PEK  = 5
+    FROM = 6
+    TO   = 7
+    CONTS = 8
+
 class Asm:
     def usr(pk):
-        return {PACK.TYPE: PACK.USR, PACK.PK: pk}
+        return {PACK.TYPE: PACKT.USR, PACK.PK: pk}
     
-    def from_to(from, to):
-        return {PACK.FROM: from, PACK.TO: to}
+    def from_to(frm, to):
+        return {PACK.FROM: frm, PACK.TO: to}
     
     def kex(pek, from_to):
-        return {PACK.TYPE: PACK.KEX, PACK.PEK: pek, **from_to}
+        return {PACK.TYPE: PACKT.KEX, PACK.PEK: pek, **from_to}
     
     def msg(conts, from_to):
-        return {PACK.TYPE: PACK.MSG, PACK.CONTS: conts, **from_to}
-
-def Err(what):
-    return {"err": what}
-
-def Ok(what):
-    return {"ok": what}
-
-class UIMessages:
-    welcome = """
-    Welcome to Nsc, the new simple chat.
-    To start chatting, please enter your (new) password.
-    """
-    pass_prompt = "Password: "
-
-# TODO: don't hardcode this
-CON = ("themisch.strangled.net", 32471)
+        return {PACK.TYPE: PACKT.MSG, PACK.CONTS: conts, **from_to}
+CON = ("localhost", 32471)
 
 COMMON_PATH = Path(xdg_data_home(), "nsc")
-def backend_socket_path(extra):
-    return str(Path(COMMON_PATH, 'backend' + extra)).encode()
