@@ -1,131 +1,102 @@
-"""
-Copyright (C) 2022 themisch
-
-This file is part of Nsc.
-Nsc is free software: you can redistribute it and/or modify it under the terms
-of the GNU General Public License as published by the Free Software Foundation,
-either version 3 of the License, or (at your option) any later version.
-
-Nsc is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
-details.
-
-You should have received a copy of the GNU General Public License along with Nsc.
-If not, see <https://www.gnu.org/licenses/>.
-"""
-
 from common import *
 import socketserver
 
-cache = list()
+Online = []
+lock = Lock()
 
-class Scp:
-    def __init__(self, peer):
-        self.peer = peer
-        self.conn = True
-        self.verified_names = list()
+class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        self.sock = MsgSocket(self.request)
+        
+        try:
+            self.authenticate()
 
-    def verify_name(self, obj):
-        peer_name = obj.get(PACK.PK)
-        # TODO: add check for nothin here
-        peer_exchange_key = PublicKey(peer_name)
-        exchange_key = PrivateKey.generate()
+            while raw := self.sock.get():
+                #if not raw: continue
+                m = Message().decrypt(raw)
+                # forward messages
+                for E in Online:
+                    pk = next(iter(E))
+                    if m.to == pk:
+                        mx = Message(self.my_entity, m.conts, i=m.id).encrypt()
+                        try:
+                            E[pk].put(mx)
+                        except Exception as e:
+                            if not e in (BrokenPipeError, ConnectionResetError, OSError):
+                                print("---- sub send ERROR: ")
+                                traceback.print_exc()
+                print(Online)
+        except:
+            print("main send: ")
+            traceback.print_exc()
+        finally:
+            self.cleanup_entity()
+            print("closing")
 
-        box = Box(exchange_key, peer_exchange_key)
-        Socket(self.peer).put(Asm.user_packet(exchange_key.public_key.encode()))
 
-        # If the peer has the private key for the provided public key, then
-        # a key exchange is possible. If not then we know the peer is trying to
-        # get unwanted access to another peers data.
-        res = Socket(self.peer).get()
-        typ = res.get(PACK.TYPE) if type(res) == dict else None
-        if typ == PACK.MSG and res.get(PACK.CONTS):
-            msg = box.decrypt(res.get(PACK.CONTS))
-            if msg == peer_name:
-                self.verified_names.append(peer_name)
-                cache.append({peer_name: self.peer})
-                return
-        self.end()
+    def cleanup_entity(self) -> None:
+        for E in Online:
+            pk = next(iter(E))
+            if (E[pk].sock.fileno()) < 0:
+                print("closing dead socket")
+            if pk == self.my_entity:
+                # Only close the currently active socket, or any missed closed ones.
+                if (E[pk].sock == self.request):
+                    Online.remove(E)
+    
+    def count_entity(self, entity_pk: PublicKey) -> int:
+        count = 0
+        for E in Online:
+            pk = next(iter(E))
+            if pk == entity_pk:
+                count += 1
+        return count
 
-    # try to find potentially bad packets, which could crash the reciepients
-    # client.
-    def check_packet(self, packet):
-        if packet[PACK.TYPE] == PACK.KEX:
-            # if a bad key was provided, this will crash the current server
-            # thread, disconnecting the attacker.
-            PublicKey(packet.get(PACK.PEK))
-            
-    def handle(self):
-        sent = False
-        res = Socket(self.peer).get()
+    def authenticate(self) -> (None or bool):
+        session_sk = PrivateKey.generate()
 
-        # disconnect the peer when invalid data was recieved.
-        if not res:
-            print("ending")
-            self.end()
-            return
+        # Do a DH key exchange to create a secure session key.
+        session_secret = Box(session_sk, PublicKey(self.sock.get())).shared_key()
+        self.sock.put(session_sk.public_key.encode())
 
-        if res.get(PACK.TYPE) in (PACK.KEX, PACK.MSG):
-            # Only verified clients are allowed send messages
-            if (not res[PACK.FROM][PACK.PK] in self.verified_names) or self.check_packet(res):
-                print("unverified_peer or bad packet")
-                self.end()
-                return
-            # start from the back of the cache, to allow newer connections
-            # to recieve the message instead.
-            for user in cache:
-                recipient = next(iter(user))
-                if res[PACK.TO][PACK.PK] == recipient:
-                    Socket(user[recipient]).put(res)
-                    sent = True
+        self.sock.session_key = session_secret
 
-            # notify the peer if the message couldn't be sent to `To`
-            if not sent:
-                Socket(self.peer).put(Err("offline"))
+        # Get the entity's auth information
+        entity_proof_raw = self.sock.get()
+        entity_proof = Message().decrypt(entity_proof_raw)
+        shared_secret = Box(testing_server_entity.sk, entity_proof.pk).shared_key()
+        
+        # TODO: catch decrypt error on failure
+        entity_proof = Message(key=shared_secret).decrypt(entity_proof_raw)
 
-        elif res.get(PACK.TYPE) == PACK.USR:
-            self.verify_name(res)
-        print(res)
+        # Validate entity
+        if entity_proof.pk == PublicKey(entity_proof.conts):
+            self.sock.key = shared_secret
 
-    def end(self):
-        self.conn = False
-        print("DISCONNECTed:", self.peer)
-        for addr in self.verified_names:
-            e = {addr: self.peer}
-            if e in cache:
-                cache.remove(e)
-                print("peer removed from cache")
+            # Make the Entity accessible to others
+            if self.count_entity(entity_proof.pk) < server_config_max_logins*2:
+                self.my_entity = entity_proof.pk
+                Online.append({self.my_entity: self.sock})
 
-class TLServer(socketserver.TCPServer):
-    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
-        socketserver.TCPServer.__init__(
-            self, server_address, RequestHandlerClass, bind_and_activate
-        )
+                print("entity auth success", Entity(pk=entity_proof.pk).encode())
+                #print("initial_secret is", Base64Encoder.encode(shared_secret))
+                #print("session_secret is", Base64Encoder.encode(session_secret))
+            else:
+                print("too many logins for: ", Entity(pk=entity_proof.pk).encode())
+                # disconnect entity because they are already logged in
+                return True
+        else:
+            print("entity auth fail", Entity(pk=entity_proof.pk).encode())
+            return True
 
-        # self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        # self.context.load_cert_chain('keys/cert.pem', 'keys/key.pem')
-        # self.socket = self.context.wrap_socket(self.socket, server_side=True)
-
-class ThreadingTLServer(socketserver.ThreadingMixIn, TLServer):
-    pass
-
-class TLSRequestHandler(socketserver.BaseRequestHandler):
-    def handle(self):
-        proto = Scp(self.request)
-        while proto.conn:
-            # TODO: use try to catch errors later
-            try:
-                proto.handle()
-            except Exception as e:
-                proto.end()
-                print("unhandled err:\n\n", e)
-
-def main():
-    server = ThreadingTLServer(CON, TLSRequestHandler)
-    ip, port = server.server_address
-    print("Serving on: {}:{}".format(ip, port))
-    server.serve_forever()
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    # Since IPV6 > IPV4!
+    address_family = socket.AF_INET6
 
 if __name__ == "__main__":
-    main()
+    server = ThreadedTCPServer((testing_server_entity.ip, testing_server_entity.port), ThreadedTCPRequestHandler)
+    with server:
+        print("Serving on", server.server_address)
+        
+        server.serve_forever()
+        server.shutdown()
