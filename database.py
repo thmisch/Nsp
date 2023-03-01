@@ -1,6 +1,7 @@
 import pickle, os, shutil
 from nacl.secret import SecretBox
 
+
 class PersistentDict(dict):
     """Persistent dictionary with an API compatible with shelve and anydbm.
 
@@ -14,7 +15,7 @@ class PersistentDict(dict):
         self.flag = flag  # r=readonly, c=create, or n=new
         self.mode = mode  # None or an octal triple like 0644
         self.box = SecretBox(key)
-        
+
         self.filename = filename
         if flag != "n" and os.access(filename, os.R_OK):
             fileobj = open(filename, "rb")

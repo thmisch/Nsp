@@ -11,4 +11,14 @@ create api or load from GUI structure
 sendto ...
 save api in GUI structure if not exist
 
-The contents of a msg: [MIMETYPE, CONTENT]
+
+The Message Object, should ALWAYS specify a type,
+NO type is assumed.
+
+A sends B a mesage:
+
+A's side:
+Queue()
+Queue(Msg(B, MSG, key=random_private_key, key2=shared_key))
+
+

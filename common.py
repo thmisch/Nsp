@@ -2,7 +2,7 @@ import socket
 import msgpack
 import struct
 from threading import Thread, Lock
-from enum import Enum
+from enum import Enum, auto
 from queue import Queue
 from sys import getsizeof
 
@@ -14,33 +14,24 @@ import nacl.pwhash
 import nacl.utils
 import time
 import secrets
-from sys import argv
 import traceback
 
-# def deep_getsizeof(o, ids): https://code.tutsplus.com/tutorials/understand-how-much-memory-your-python-objects-use--cms-25609
-
-# How many times the same entity can be logged in at the same time on the same server
-server_config_max_logins = 3
-
-class Config:
-    pass
-
 # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
-
 # Simplify sending and recieving of messages
 class MsgSocket:
-    def __init__(self, sockfd: socket.socket, key: bytes=None, session_key: bytes=None) -> None:
+    def __init__(self, sockfd: socket.socket, key: bytes = None, session_key: bytes = None) -> None:
         self.sock = sockfd
         self.session_key = key
         self.key = key
 
     def put(self, msg: bytes) -> None:
         # encrypt if available yet
-        if self.session_key: msg = SecretBox(self.session_key).encrypt(msg)
-        if self.key: msg = SecretBox(self.key).encrypt(msg)
+        for key in (self.session_key, self.key):
+            if key: 
+                msg = SecretBox(key).encrypt(msg)
 
         # Prefix each message with a 4-byte length (network byte order)
-        msg = struct.pack('>I', len(msg)) + msg
+        msg = struct.pack(">I", len(msg)) + msg
         self.sock.sendall(msg)
 
     def get(self) -> bytes:
@@ -58,96 +49,112 @@ class MsgSocket:
         raw_msglen = recvall(self.sock, 4)
         if not raw_msglen:
             return None
-        msglen = struct.unpack('>I', raw_msglen)[0]
+        msglen = struct.unpack(">I", raw_msglen)[0]
         # Read the message data
         msg = recvall(self.sock, msglen)
 
         if msg:
-            # decrypt if available
-            if self.key: msg = SecretBox(self.key).decrypt(msg)
-            if self.session_key: msg = SecretBox(self.session_key).decrypt(msg)
+            for key in (self.key, self.session_key):
+                if key:
+                    msg = SecretBox(key).decrypt(msg)
 
         return msg
 
-    def __exit__(self):
-        self.sock.close()
-
-"""
-The default and only message type in Nsc:
-
-    [DEST, MSG, ID]
-    or just: [X, Y, ID]
-
-help:
- If you recieve a message, DEST is always FROM
- If you send a message, DEST is always TO
-
-Whats X ?
- * X is always a public key, thats automagically getting en/decoded on encrypt()/decrypt()
- * X is either your own public key in AUTH, the recipients or the senders key in any other case.
-
-What about Y?
- * Y can contain any binary data, in AUTH this data is a your encrypted public key, on all other
-   occasions Y contains the message. 
-
-And ID?
- * ID is always an integer, and never en/de- crypted with key or key2.
- * IDs job is to IDentify and keep track of messages, while the keyexchange takes place.
-"""
+# Some (important) types for the default subprotocols.
+class MessageType(Enum):
+    Default = auto()
+    KexInitial = auto()
+    KexReply = auto()
 
 class Message:
-    def __init__(self, X: PublicKey=None, Y: bytes=None, key: bytes=None, key2: bytes=None, i: int=0) -> None:
+    def __init__(
+        self,
+        X: PublicKey = None,
+        Y: bytes = None,
+        key: bytes = None,
+        key2: bytes = None,
+        typ: MessageType = MessageType.Default,
+    ) -> None:
         self.x = X
         self.y = Y
         self.alias()
 
         self.key = key
         self.key2 = key2
-        #self.done = False
-        self.interval_s = 0.01
-
-        self.id = i
+        self.type = typ
 
     def alias(self):
         self.frm = self.to = self.pk = self.x
-        self.conts = self.y 
+        self.conts = self.y
 
-    def encrypt(self) -> bytes:
+    def encrypt(self, no_type:bool = False) -> bytes:
         self.alias()
-        if self.key: self.y = SecretBox(self.key).encrypt(self.y)
-        if self.key2: self.y = SecretBox(self.key2).encrypt(self.y)
-        return msgpack.dumps([self.x.encode(), self.y, self.id])
 
-    def decrypt(self, encoded: bytes):
-        self.x, self.y, self.id = msgpack.loads(encoded)
+        if no_type:
+            tmp_y = self.y
+        else:
+            tmp_y = msgpack.dumps([self.type.value, self.y])
+
+        for key in (self.key, self.key2):
+            if key:
+                tmp_y = SecretBox(key).encrypt(tmp_y)
+
+        return msgpack.dumps([self.x.encode(), tmp_y])
+
+    def decrypt(self, encoded: bytes, only_x: bool=False):
+        if not encoded:
+            return
+
+        self.x, self.y = msgpack.loads(encoded)
         self.x = PublicKey(self.x)
-        if self.key2: self.y = SecretBox(self.key2).decrypt(self.y)
-        if self.key: self.y = SecretBox(self.key).decrypt(self.y)
+        if only_x:
+            return self.x
+
+        for key in (self.key2, self.key):
+            if key:
+                self.y = SecretBox(key).decrypt(self.y)
+
+        # This is needed for when we can't decrypt the content.
+        try:
+            self.type, self.y = msgpack.loads(self.y)
+            self.type = MessageType(self.type)
+        except:
+            pass
+
         self.alias()
         return self
 
-# An Nsc Entity can be a client or a server. This structure includes
-# all the required information to connect to and verify a server, and 
-# to locate and verify clients: either the servers' ip address and port 
+# An Nsp Entity can be a client or a server. This structure includes
+# all the required information to connect to and verify a server, and
+# to locate and verify clients: either the servers' ip address and port
 # or the server ip address and port that the client's usually connected to
 # and their public keys.
 class Entity:
-    def __init__(self, ip: str=None, port: int=None, pk: PublicKey=None, sk: PrivateKey=None) -> None:
+    def __init__(
+        self,
+        ip: str = None,
+        port: int = None,
+        pk: PublicKey = None,
+        sk: PrivateKey = None,
+    ) -> None:
         self.ip, self.port, self.pk, self.sk = ip, port, pk, sk
         # if (not pk) and sk:
         #     self.pk = sk.public_key
 
-    # En/De-code the Entity in Nsc's standard format.
+    # En/De-code Entity in the NspEntity format.
     def encode(self) -> str:
         return Base64Encoder.encode(msgpack.dumps([self.ip, self.port, self.pk.encode()])).decode()
-    
+
     def decode(self, encoded: str):
         self.ip, self.port, self.pk = msgpack.loads(Base64Encoder.decode(encoded.encode()))
         self.pk = PublicKey(self.pk)
         return self
-        
+
+
 # TODO: Implement another, better way to set the server's private key.
-testing_server_sk = PrivateKey(b'\xcc\xb7`\xd4V\x1cvu\rg\xcd\xdd\xbdM\x06\xa3\x9d\xf8\x10\x1e|\x074\x13\xaa$\x1d-\x19\xber\xfd')
-#testing_server_sk = PrivateKey.generate()
+testing_server_sk = PrivateKey(
+    b"\xcc\xb7`\xd4V\x1cvu\rg\xcd\xdd\xbdM\x06\xa3\x9d\xf8\x10\x1e|\x074\x13\xaa$\x1d-\x19\xber\xfd"
+)
+# testing_server_sk = PrivateKey.generate()
 testing_server_pk = testing_server_sk.public_key
-testing_server_entity = Entity("::1", 11754, testing_server_pk, testing_server_sk)
+testing_server_entity = Entity("::1", 11742, testing_server_pk, testing_server_sk)
