@@ -74,8 +74,8 @@ class Nsp:
                     msg.key2 = shared_secret
                     sock.put(msg.encrypt())
 
-                # The type is Default, since the content is encrypted with msg.key,
-                # which we don't have yet, and so decrypt will crash.
+                # The type is Default, since the content AND type is encrypted with msg.key,
+                # which we don't have yet, and so decrypt will fail -> Default Type will be selected.
                 case MessageType.Default:
                     self.kexcheck(m.to)
 
