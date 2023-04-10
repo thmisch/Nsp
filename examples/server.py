@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+from Nsp import *
 from common import *
+
 import socketserver
 import threading
+import traceback
+
+import nacl.encoding
+import nacl.hash
 
 online_lock = threading.Lock()
 Online = set()
@@ -31,18 +38,21 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                             mx = Message(self.client.pk, m.conts).encrypt(no_type=True)
                             try:
                                 #peer.sock.put(m.encrypt(no_type=True))
+
                                 peer.sock.put(mx)
+                                # display send status
+                                print(
+                                    ' -> '.join([nacl.hash.blake2b(x.encode(), encoder=nacl.encoding.HexEncoder).decode()[:8] for x in (m.to, peer.pk)])
+                                )
                             except Exception as e:
                                 traceback.print_exc()
-
-                print(Online)
         except:
             traceback.print_exc()
         finally:
             self.cleanup_client()
-            print("--" * 40, "closing")
+            print('CLOSING'.center(80, '-'))
             with online_lock:
-                print(Online)
+                print(f"{abs(int(len(Online)/2))} connected clients.")
 
     def cleanup_client(self) -> None:
         if self.client.pk:
