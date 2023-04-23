@@ -1,9 +1,9 @@
-# Nsp v1.0 
+# Nsp v1.0
 # New simple protocol (https://github.com/thmisch/Nsp)
 
-# Depends: pynacl 
+# Depends: pynacl
 
-# Simply import this file in your applications, by downloading, or by using 
+# Simply import this file in your applications, by downloading, or by using
 # git submodules.
 
 import socket
@@ -18,10 +18,13 @@ from nacl.public import PrivateKey, Box, PublicKey
 from nacl.secret import SecretBox
 from nacl.exceptions import CryptoError
 
+
 # https://stackoverflow.com/questions/17667903/python-socket-receive-large-amount-of-data
 # Simplify sending and recieving of messages
 class MsgSocket:
-    def __init__(self, sockfd: socket.socket, key: bytes = None, session_key: bytes = None) -> None:
+    def __init__(
+        self, sockfd: socket.socket, key: bytes = None, session_key: bytes = None
+    ) -> None:
         self.sock = sockfd
         self.session_key = key
         self.key = key
@@ -29,7 +32,7 @@ class MsgSocket:
     def put(self, msg: bytes) -> None:
         # encrypt if available yet
         for key in (self.session_key, self.key):
-            if key: 
+            if key:
                 msg = SecretBox(key).encrypt(msg)
 
         # Prefix each message with a 4-byte length (network byte order)
@@ -62,11 +65,13 @@ class MsgSocket:
 
         return msg
 
+
 # Some (important) types for the default subprotocols.
 class MessageType(Enum):
     Default = auto()
     KexInitial = auto()
     KexReply = auto()
+
 
 class Message:
     def __init__(
@@ -89,7 +94,7 @@ class Message:
         self.frm = self.to = self.pk = self.x
         self.conts = self.y
 
-    def encrypt(self, no_type:bool = False) -> bytes:
+    def encrypt(self, no_type: bool = False) -> bytes:
         self.alias()
 
         if no_type:
@@ -103,7 +108,7 @@ class Message:
 
         return msgpack.dumps([self.x.encode(), tmp_y])
 
-    def decrypt(self, encoded: bytes, only_x: bool=False):
+    def decrypt(self, encoded: bytes, only_x: bool = False):
         if not encoded:
             return
 
@@ -126,6 +131,7 @@ class Message:
         self.alias()
         return self
 
+
 # An Nsp Entity can be a client or a server. This structure includes
 # all the required information to connect to and verify a server, and
 # to locate and verify clients: either the servers' ip address and port
@@ -145,15 +151,25 @@ class Entity:
 
     # En/De-code Entity in the NspEntity format.
     def encode(self) -> str:
-        return URLSafeBase64Encoder.encode(msgpack.dumps([self.ip, self.port, self.pk.encode()])).decode()
+        return URLSafeBase64Encoder.encode(
+            msgpack.dumps([self.ip, self.port, self.pk.encode()])
+        ).decode()
 
     def decode(self, encoded: str):
-        self.ip, self.port, self.pk = msgpack.loads(URLSafeBase64Encoder.decode(encoded.encode()))
+        self.ip, self.port, self.pk = msgpack.loads(
+            URLSafeBase64Encoder.decode(encoded.encode())
+        )
         self.pk = PublicKey(self.pk)
         return self
 
-class KexAuthError(Exception): pass
-class ThreadEnd(): pass
+
+class KexAuthError(Exception):
+    pass
+
+
+class ThreadEnd:
+    pass
+
 
 class Nsp:
     def __init__(self, myself: Entity, server: Entity) -> None:
@@ -175,11 +191,11 @@ class Nsp:
             if not pk in self.kex:
                 self.kex[pk] = []
 
-    def kexcheck(self, pk):
+    def kexcheck(self, pk: bytes or PublicKey):
         with self.lock:
             if not pk in self.kex or not len(self.kex[pk]):
                 # TODO: ADD TO UNTRUSTED; AND HANDLE ERRORS
-                raise TypeError(f"{m.to} is lying, or your memory corrupted.")
+                raise TypeError(f"{pk} is lying, or your memory corrupted.")
 
     def getloop(self) -> None:
         sock = self.initsock()
@@ -190,7 +206,7 @@ class Nsp:
             frm = Message().decrypt(raw_m, only_x=True)
             shared_secret = Box(self.myself.sk, frm).shared_key()
             m = Message(key2=shared_secret).decrypt(raw_m)
-            
+
             match m.type:
                 # SOMEONE wants send us a MESSAGE.
                 # So we send a KexReply
@@ -199,14 +215,13 @@ class Nsp:
                     # to reply
 
                     self.kexfor(m.frm)
-                    msg = Message(m.frm, 
-                                  key=PrivateKey.generate()
-                    )
-                    
-                    kex_msg = Message(m.frm, 
-                                      msg.key.public_key.encode(),
-                                      key2=shared_secret, 
-                                      typ=MessageType.KexReply
+                    msg = Message(m.frm, key=PrivateKey.generate())
+
+                    kex_msg = Message(
+                        m.frm,
+                        msg.key.public_key.encode(),
+                        key2=shared_secret,
+                        typ=MessageType.KexReply,
                     )
 
                     msg.key = Box(msg.key, PublicKey(m.conts)).shared_key()
@@ -239,7 +254,9 @@ class Nsp:
                     # TODO: maybe handle nacl.exceptions.CryptoError:
 
                 case _:
-                    raise TypeError(f"{m.to} used an unsupported message type: {m.type}")
+                    raise TypeError(
+                        f"{m.to} used an unsupported message type: {m.type}"
+                    )
 
     def putloop(self) -> None:
         sock = self.initsock()
@@ -249,10 +266,11 @@ class Nsp:
                 break
             self.kexfor(msg.to)
 
-            kex_msg = Message(msg.to, 
-                          msg.key.public_key.encode(), 
-                          key2=msg.key2, 
-                          typ=MessageType.KexInitial
+            kex_msg = Message(
+                msg.to,
+                msg.key.public_key.encode(),
+                key2=msg.key2,
+                typ=MessageType.KexInitial,
             )
 
             with self.lock:
@@ -263,7 +281,7 @@ class Nsp:
     def initsock(self) -> MsgSocket:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         sock.connect((self.server.ip, self.server.port))
- 
+
         # start handshake
         session_sk = PrivateKey.generate()
 
@@ -276,7 +294,9 @@ class Nsp:
 
         # Proof for the server that you are the one claiming to be
         shared_secret = Box(self.myself.sk, self.server.pk).shared_key()
-        my_proof = Message(self.myself.pk, self.myself.pk.encode(), key=shared_secret)
+        my_proof = Message(
+            self.myself.pk, self.myself.pk.encode(), key=shared_secret
+        )
 
         sock.put(my_proof.encrypt())
         sock.key = shared_secret
@@ -288,6 +308,6 @@ class Nsp:
             to,
             message,
             key=PrivateKey.generate(),
-            key2=Box(self.myself.sk, to).shared_key()
+            key2=Box(self.myself.sk, to).shared_key(),
         )
         self.outgoing.put(m)
